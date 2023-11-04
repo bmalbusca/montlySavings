@@ -100,6 +100,7 @@ def balanceAmount(df, column='Saldo'):
     diffvalue=float(valuet)-float(value0)
     print("Inicio:", df['Mov'].iloc[0],value0,"€   Fim: ", df['Mov'].iloc[-1], valuet, "€  Resultado:", diffvalue,"€")
 
+## example: filterDate(df,'2023-07-11','2023-07-13' ))
 def filterDate(df, start, end_date=False, debug=False):
     if end_date:
         mask = (df['Mov'] >= start) & (df['Mov'] <= end_date)
@@ -138,9 +139,31 @@ def expensesRecurring(df,threshold=10):
     rec_merge = pandas.merge( receivers, recurring_exp, on="Descritivo do Movimento", how='inner') 
     print(rec_merge.sort_values(by='size', ascending=False).rename(columns = {'Valor.1':'Soma', 'size':'Ocurrencias'}).head(threshold))
 
+def expensesAnalytics(df, column='Valor.1'):
+    total_expense=(df[df[column]<0][column].sum())
+    expense_avg=(df[df[column]<0][column].mean())
+    expense_max=(df[df[column]<0][column].max())
+    expense_min=(df[df[column]<0][column].min())
+    
+    duration= (df['Mov'].iloc[-1] - df['Mov'].iloc[0])
+    expense_avg_day=total_expense/float(duration.days)
 
-#expensesAbove(df,30)
-#expensesBiggest(df)
+    return [total_expense,expense_avg, expense_avg_day, expense_min, expense_max]
+
+def earningsAnalytics(df, column='Valor.1'):
+    total_earning=(df[df[column]>0][column].sum())
+    earning_avg=(df[df[column]>0][column].mean())
+    earning_max=(df[df[column]>0][column].max())
+    earning_min=(df[df[column]>0][column].min())
+    
+    duration= (df['Mov'].iloc[-1] - df['Mov'].iloc[0])
+    earning_avg_day=total_earning/float(duration.days)
+
+    return [total_earning, earning_avg, earning_avg_day, earning_max, earning_min]
+
+def getDataMonth(df, column='Mov'):
+    return (df[column].dt.month.unique())
+
 
 if __name__ == "__main__":
     read_cache = None
@@ -151,7 +174,7 @@ if __name__ == "__main__":
     file_list =getLocalFiles()
     df=collectCacheData(debug=False)
 
-    if isinstance(df, type(None)) == True:
+    if isinstance(df, type(None)) == True: #does not existe data
         df = pandas.DataFrame()
         new_file=False
         for fdir in list(file_list.keys()):
@@ -175,6 +198,7 @@ if __name__ == "__main__":
                 complete_dir = fdir+'/'+filename
                 if complete_dir  not in cache_file_list:
                     s = readPDFSantander(file_dir=complete_dir,store_incache=False)
+                    s = parseDataframe(s)
                     df=pandas.concat([df,s])
                     new_file=True
         if new_file:
@@ -184,11 +208,12 @@ if __name__ == "__main__":
             df.to_pickle('cached_dataframe.pkl') # will be stored in current directory
 
 
-    mask = (df['Mov'] >= '2023-07-11') 
-    #print(mask.to_string())
-    #print(df[mask])
-    
-    balanceAmount(filterDate(df,'2023-07-11','2023-07-13' ))
+    print(expensesAnalytics(df))
+    print(earningsAnalytics(df))
+    #expensesAbove(df,30)
+    #expensesBiggest(df)
+    getDataMonth(df)
+    balanceAmount(df)
 
 
 
