@@ -30,31 +30,35 @@ def getLocalFiles(debug = False) -> list:
         print(existing_files_list)
     return {cwd : existing_files_list}
 
-
-test =getLocalFiles()
-print(test)
-
 def collectCacheData(cache_name='cached_dataframe.pkl',debug=False):
     # Read your DataFrame
-    read_cache = pandas.read_pickle(cache_name) # read from current directory
-    if debug:
-        print("read_cache", read_cache)
+    try:
+        read_cache = pandas.read_pickle(cache_name) # read from current directory
+        if debug:
+            print("[LOAD]: Loading cache data", read_cache)
 
-    if not read_cache.empty :
-        return read_cache
+        if not read_cache.empty :
+            return read_cache
+    except:
+        if debug:
+            print("[ALERT]: No cached data")
     return None
 
-def readPDF(file_dir="~/Downloads/extracto.pdf", debug=False, filter_set_column={'Mov', 'Valor', 'Saldo'}, store_incache=True):
+def readPDFSantander(file_dir="~/Downloads/extracto.pdf", debug=False, filter_set_column={'Mov', 'Valor', 'Descritivo do Movimento','Valor.1' ,'Saldo'}, store_incache=True):
 
     tables = tabula.read_pdf(file_dir, pages="all")
-    #print(tables[0], type(tables[0]), len(tables[0]))
+    print(tables)
 
     filtered_tables=[]
     for table in tables:
         if filter_set_column.issubset(table.columns):
                 filtered_tables.append(table)
-
+    
+    #change this for future; manual find out is not the correct way, maybe should pass as function or each for each version known
+    #year= tables[-2]['Valor'][0].split('-')[0]
+    year='2023'
     df=filtered_tables[0].copy()
+
     if debug:
         print(len(filtered_tables[0]), len(filtered_tables[1]),len(filtered_tables[0])+ len(filtered_tables[1]) )
     
@@ -63,19 +67,16 @@ def readPDF(file_dir="~/Downloads/extracto.pdf", debug=False, filter_set_column=
             print("table[",i,"]")
         if list(filtered_tables[0].columns) == list(filtered_tables[i+1].columns):
             df=pandas.concat([df, filtered_tables[i+1]], ignore_index = True)
+    df['Filename']=file_dir
     if debug:
         print(len(filtered_tables[0]),len(df))
         print(df)
-    
+    df['Valor']=year
     # Store your DataFrame
     if store_incache:
         df.to_pickle('cached_dataframe.pkl') # will be stored in current directory
     
     return df
-
-df=collectCacheData(debug=True)
-if isinstance(df, type(None)) == True:
-    df=readPDF()
 
 def existsNaNDataframe(df, column='Saldo'):
     print("Nan Values:",df[column].isnull().values.any()) #There is nan
@@ -87,24 +88,68 @@ def parseDataframe(df):
     df['Saldo']=df['Saldo'].apply(str2num)
     df= df.dropna(subset=['Valor.1']).reset_index(drop=True)
     df['Valor.1'] =df['Valor.1'].apply(str2num)
+    # change this read the value of Valor or gettign the year by intput
+    df['Mov']=df['Mov'].apply(lambda x: str(x)+'-'+str(2023))
+    df['Mov'] = pandas.to_datetime(df['Mov'],errors='coerce', format='%d-%m-%Y')
+    df.drop_duplicates(inplace=True)
+    df.sort_values(by='Mov',inplace=True)
+    df.reset_index(inplace=True,drop=True)
     return df
 
-#print(valor.to_string())
-df=parseDataframe(df)
+
+
+file_list =getLocalFiles()
+df=collectCacheData(debug=True)
+
+if isinstance(df, type(None)) == True:
+    df = pandas.DataFrame()
+    new_file=False
+    for fdir in list(file_list.keys()):
+        for filename in file_list[fdir]:
+            complete_dir = fdir+'/'+filename
+            s = readPDFSantander(file_dir=complete_dir,store_incache=False)
+            #print(s)
+            new_file=True
+            df=pandas.concat([df,s])
+    if new_file:
+        df=parseDataframe(df)
+        print(df.to_string())
+        df.to_pickle('cached_dataframe.pkl') # will be stored in current directory
+
+else:
+    cache_file_list= df['Filename'].unique()
+    new_file=False
+    for fdir in list(file_list.keys()):
+        for filename in file_list[fdir]:
+            complete_dir = fdir+'/'+filename
+            if complete_dir  not in cache_file_list:
+                s = readPDFSantander(file_dir=complete_dir,store_incache=False)
+                df=pandas.concat([df,s])
+                new_file=True
+    if new_file:
+        df=parseDataframe(df)
+        print(df.to_string())
+        df.to_pickle('cached_dataframe.pkl') # will be stored in current directory
+
+
 def balanceAmount(df, column='Saldo'):
-    value0= df[column][0]
+    value0= df[column].iloc[0]-df['Valor.1'].iloc[0]
     valuet= df[column].iloc[-1]
     diffvalue=float(valuet)-float(value0)
-    print("Inicio:", df['Valor'][1],value0,"€   Fim: ", df['Valor'].iloc[-1], valuet, "€  Resultado:", diffvalue,"€")
+    print("Inicio:", df['Mov'].iloc[0],value0,"€   Fim: ", df['Mov'].iloc[-1], valuet, "€  Resultado:", diffvalue,"€")
 #print(df.dtypes)
 
-balanceAmount(df)
+mask = (df['Mov'] >= '2023-07-11') 
+print(mask.to_string())
+print(df[mask])
+balanceAmount(df[mask])
 
 #df= df.dropna(subset=['Valor.1']).reset_index(drop=True)
 #df['Valor.1'] =df['Valor.1'].apply(str2num)
 
 #print(df)
-
+## Despesas e ganhos por mes, selecionar mes e valor medio de gastos e valores maximo e minimos 
+##
 def expensesBiggest(df,threshold=10):
     print("======= 10 Maiores Despesas ========")
     print(df.nsmallest(threshold,'Valor.1', keep='all')[['Mov','Descritivo do Movimento', 'Valor.1']])
@@ -129,6 +174,6 @@ def expensesRecurring(df,threshold=10):
     print(rec_merge.sort_values(by='size', ascending=False).rename(columns = {'Valor.1':'Soma', 'size':'Ocurrencias'}).head(threshold))
 
 
-expensesAbove(df,30)
-expensesBiggest(df)
+#expensesAbove(df,30)
+#expensesBiggest(df)
 ## Falta fazer menu, guardar por data, fazer grafico 
