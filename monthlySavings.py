@@ -1,6 +1,8 @@
-import os, types
+import os
 import pandas
 import tabula
+import matplotlib.pyplot as plt
+from matplotlib.widgets import SpanSelector
 
 def str2num(x: str) -> float:
     try:
@@ -27,6 +29,8 @@ def getLocalFiles(debug = False) -> list:
     if debug:
         print(existing_files_list)
     return {cwd : existing_files_list}
+
+
 
 def collectCacheData(cache_name='cached_dataframe.pkl',debug=False):
     # Read your DataFrame
@@ -212,9 +216,33 @@ if __name__ == "__main__":
     print(earningsAnalytics(df))
     #expensesAbove(df,30)
     #expensesBiggest(df)
-    getDataMonth(df)
+    print(getDataMonth(df))
     balanceAmount(df)
 
+  
+    expense_values = df[df['Valor.1']<0].groupby(['Mov']).agg("sum")
+    x1 = expense_values.index
+    y1 = -expense_values['Valor.1']
 
+ 
+    income_values = df[df['Valor.1']>0].groupby(['Mov']).agg("sum")
+    x2 = income_values.index
+    y2 = income_values['Valor.1']
 
-## Falta fazer menu, guardar por data, fazer grafico 
+     # plot
+    fig=plt.figure()
+    plt.figure(1).clear()
+    width = 2
+    ax=fig.add_subplot(111, label="Spend",picker=True)
+
+    bar1=ax.bar(x1, y1, color='red',width=0.5*width)
+    #fig.suptitle('This is a somewhat long figure title', fontsize=16)
+    bar2=ax.bar(x2,y2,color='green',alpha=0.5)
+
+    ax.set(ylabel='Value (€)', xlabel='Time', title='Expenses x Income during time')
+    plt.xticks(rotation=30,ha='right')
+    ax.bar_label(bar1, rotation=30)
+    ax.bar_label(bar2,rotation=30)
+
+    plt.show()
+
