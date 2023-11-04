@@ -9,8 +9,6 @@ def str2num(x: str) -> float:
         #print(x)
         return x
 
-read_cache = None
-df=None
 
 def getLocalFiles(debug = False) -> list:
     existing_files_list = []
@@ -95,61 +93,15 @@ def parseDataframe(df):
     df.sort_values(by='Mov',inplace=True)
     df.reset_index(inplace=True,drop=True)
     return df
-
-
-
-file_list =getLocalFiles()
-df=collectCacheData(debug=True)
-
-if isinstance(df, type(None)) == True:
-    df = pandas.DataFrame()
-    new_file=False
-    for fdir in list(file_list.keys()):
-        for filename in file_list[fdir]:
-            complete_dir = fdir+'/'+filename
-            s = readPDFSantander(file_dir=complete_dir,store_incache=False)
-            #print(s)
-            new_file=True
-            df=pandas.concat([df,s])
-    if new_file:
-        df=parseDataframe(df)
-        print(df.to_string())
-        df.to_pickle('cached_dataframe.pkl') # will be stored in current directory
-
-else:
-    cache_file_list= df['Filename'].unique()
-    new_file=False
-    for fdir in list(file_list.keys()):
-        for filename in file_list[fdir]:
-            complete_dir = fdir+'/'+filename
-            if complete_dir  not in cache_file_list:
-                s = readPDFSantander(file_dir=complete_dir,store_incache=False)
-                df=pandas.concat([df,s])
-                new_file=True
-    if new_file:
-        df=parseDataframe(df)
-        print(df.to_string())
-        df.to_pickle('cached_dataframe.pkl') # will be stored in current directory
-
-
+ 
 def balanceAmount(df, column='Saldo'):
     value0= df[column].iloc[0]-df['Valor.1'].iloc[0]
     valuet= df[column].iloc[-1]
     diffvalue=float(valuet)-float(value0)
     print("Inicio:", df['Mov'].iloc[0],value0,"€   Fim: ", df['Mov'].iloc[-1], valuet, "€  Resultado:", diffvalue,"€")
-#print(df.dtypes)
 
-mask = (df['Mov'] >= '2023-07-11') 
-print(mask.to_string())
-print(df[mask])
-balanceAmount(df[mask])
 
-#df= df.dropna(subset=['Valor.1']).reset_index(drop=True)
-#df['Valor.1'] =df['Valor.1'].apply(str2num)
-
-#print(df)
 ## Despesas e ganhos por mes, selecionar mes e valor medio de gastos e valores maximo e minimos 
-##
 def expensesBiggest(df,threshold=10):
     print("======= 10 Maiores Despesas ========")
     print(df.nsmallest(threshold,'Valor.1', keep='all')[['Mov','Descritivo do Movimento', 'Valor.1']])
@@ -176,4 +128,54 @@ def expensesRecurring(df,threshold=10):
 
 #expensesAbove(df,30)
 #expensesBiggest(df)
+
+if __name__ == "__main__":
+    read_cache = None
+    df=None
+    debug=False
+
+
+    file_list =getLocalFiles()
+    df=collectCacheData(debug=False)
+
+    if isinstance(df, type(None)) == True:
+        df = pandas.DataFrame()
+        new_file=False
+        for fdir in list(file_list.keys()):
+            for filename in file_list[fdir]:
+                complete_dir = fdir+'/'+filename
+                s = readPDFSantander(file_dir=complete_dir,store_incache=False)
+                #print(s)
+                new_file=True
+                df=pandas.concat([df,s])
+        if new_file:
+            df=parseDataframe(df)
+            if debug:
+                print(df.to_string())
+            df.to_pickle('cached_dataframe.pkl') # will be stored in current directory
+
+    else:
+        cache_file_list= df['Filename'].unique()
+        new_file=False
+        for fdir in list(file_list.keys()):
+            for filename in file_list[fdir]:
+                complete_dir = fdir+'/'+filename
+                if complete_dir  not in cache_file_list:
+                    s = readPDFSantander(file_dir=complete_dir,store_incache=False)
+                    df=pandas.concat([df,s])
+                    new_file=True
+        if new_file:
+            df=parseDataframe(df)
+            if debug:
+                print(df.to_string())
+            df.to_pickle('cached_dataframe.pkl') # will be stored in current directory
+
+
+    mask = (df['Mov'] >= '2023-07-11') 
+    #print(mask.to_string())
+    #print(df[mask])
+    balanceAmount(df[mask])
+
+
+
 ## Falta fazer menu, guardar por data, fazer grafico 
