@@ -100,6 +100,19 @@ def balanceAmount(df, column='Saldo'):
     diffvalue=float(valuet)-float(value0)
     print("Inicio:", df['Mov'].iloc[0],value0,"€   Fim: ", df['Mov'].iloc[-1], valuet, "€  Resultado:", diffvalue,"€")
 
+def filterDate(df, start, end_date=False, debug=False):
+    if end_date:
+        mask = (df['Mov'] >= start) & (df['Mov'] <= end_date)
+    else:
+        mask = (df['Mov'] >= start)
+
+    if debug:
+        print(mask.to_string())
+        print(df[mask])
+    
+    return df[mask]
+
+
 
 ## Despesas e ganhos por mes, selecionar mes e valor medio de gastos e valores maximo e minimos 
 def expensesBiggest(df,threshold=10):
@@ -154,7 +167,7 @@ if __name__ == "__main__":
                 print(df.to_string())
             df.to_pickle('cached_dataframe.pkl') # will be stored in current directory
 
-    else:
+    else: #see this else routine
         cache_file_list= df['Filename'].unique()
         new_file=False
         for fdir in list(file_list.keys()):
@@ -174,7 +187,8 @@ if __name__ == "__main__":
     mask = (df['Mov'] >= '2023-07-11') 
     #print(mask.to_string())
     #print(df[mask])
-    balanceAmount(df[mask])
+    
+    balanceAmount(filterDate(df,'2023-07-11','2023-07-13' ))
 
 
 
