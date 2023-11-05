@@ -169,6 +169,116 @@ def getDataMonth(df, column='Mov'):
     return (df[column].dt.month.unique())
 
 
+def getExpensesOverview(df):
+     expense_values = df[df['Valor.1']<0].groupby(['Mov']).agg("sum")
+     idx_expense_values= expense_values.index
+     acc_expense_values=  expense_values['Valor.1'].cumsum()
+     #print(idx_expense_values, expense_values)
+     return [idx_expense_values,-expense_values['Valor.1'], -acc_expense_values]
+
+def getMarginOverview(df):
+    margin_values = df.groupby(['Mov']).agg("sum")
+    idx_margin_values = margin_values.index
+    acc_margin_values = margin_values['Valor.1'].cumsum()
+
+    return [idx_margin_values,margin_values['Valor.1'], acc_margin_values]
+
+def getIncomeOverwiew(df):
+        income_values = df[df['Valor.1']>0].groupby(['Mov']).agg("sum")
+        idx_income_values  = income_values.index
+        acc_income_values = income_values['Valor.1'].cumsum()
+        
+        return [idx_income_values, income_values['Valor.1'], acc_income_values]
+
+
+
+def plotOverview(df,fig,ax,label=False):
+        #converter o plot num funcao e fazer pequenas funcoes para criar o dataframe final: sum dia, mes, ano; e filtro com filterDate
+        expense_values = df[df['Valor.1']<0].groupby(['Mov']).agg("sum")
+        x1 = expense_values.index
+        y1 = -expense_values['Valor.1']
+        y3 = -expense_values['Valor.1'].cumsum()
+
+        margin_values = df.groupby(['Mov']).agg("sum")
+        x5= margin_values.index
+        y5= margin_values['Valor.1'].cumsum()
+
+
+        income_values = df[df['Valor.1']>0].groupby(['Mov']).agg("sum")
+        x2 = income_values.index
+        y2 = income_values['Valor.1']
+        y4 = income_values['Valor.1'].cumsum()
+
+        # plot
+        width = 2
+
+        acumulative1=ax.stackplot(x1, y3,alpha=0.2, color='red')
+        acumulative2=ax.stackplot(x2, y4,alpha=0.1, color='green')
+
+        bar1=ax.bar(x1, y1, color='red',width=0.5*width)
+        bar2=ax.bar(x2,y2,color='green',alpha=0.5)
+        line1=ax.plot(x5,y5,color='k', alpha=0.1) 
+        
+        #fig.suptitle('This is a somewhat long figure title', fontsize=16)
+        ax.set(ylabel='Value (€)', xlabel='Time', title='Expenses x Income during time')
+        plt.xticks(rotation=30,ha='right')
+        if label:
+            ax.bar_label(bar1, rotation=30)
+            ax.bar_label(bar2,rotation=30)
+
+
+def plotOverview(expense_values,income_values,margin_values, fig,ax,label=True,accumulative=False):
+
+        x1 = expense_values[0]
+        y1 = expense_values[1]
+
+        x2 = income_values[0]
+        y2 = income_values[1]
+
+        if(accumulative):
+            y3 = expense_values[2]
+            y4 = income_values[2]
+            x5= margin_values[0]
+            y5= margin_values[2]
+
+            line0=ax.plot(x5,y5,color='k', alpha=0.1)
+            acumulative1=ax.stackplot(x1, y3,alpha=0.2, color='red')
+            acumulative2=ax.stackplot(x2, y4,alpha=0.1, color='green')
+
+        # plot
+        width = 2
+        bar1=ax.bar(x1, y1, color='red',width=0.5*width)
+        bar2=ax.bar(x2,y2,color='green',alpha=0.5)
+        
+        #fig.suptitle('This is a somewhat long figure title', fontsize=16)
+        ax.set(ylabel='Value (€)', xlabel='Time', title='Expenses x Income during time')
+        plt.xticks(rotation=30,ha='right')
+        if label:
+            ax.bar_label(bar1, rotation=30)
+            ax.bar_label(bar2,rotation=30)
+  
+def plotOverview(expense_values,income_values,fig,ax,label=True):
+
+        x1 = expense_values[0]
+        y1 = expense_values[1]
+
+        x2 = income_values[0]
+        y2 = income_values[1]
+
+             # plot
+        width = 2
+        bar1=ax.bar(x1, y1, color='red',width=0.5*width)
+        bar2=ax.bar(x2,y2,color='green',alpha=0.5)
+        
+        #fig.suptitle('This is a somewhat long figure title', fontsize=16)
+        ax.set(ylabel='Value (€)', xlabel='Time', title='Expenses x Income during time')
+        plt.xticks(rotation=30,ha='right')
+        if label:
+            ax.bar_label(bar1, rotation=30)
+            ax.bar_label(bar2,rotation=30)
+  
+
+
 if __name__ == "__main__":
     read_cache = None
     df=None
@@ -225,49 +335,26 @@ if __name__ == "__main__":
     # Access a specific group by using the .get_group() method on the GroupBy object
     group=grouped.loc[2023]
     # Display the result
-    print(grouped.loc[grouped.index[0]], grouped.index, group.index,group.loc[group.index[0]])
+    #print(grouped.loc[grouped.index[0]], grouped.index, group.index,group.loc[group.index[0]])
 
-    df[df['Valor.1']<0].groupby([df['Mov'].dt.year]).sum()
+    expense_by_year= df[df['Valor.1']<0].groupby([df['Mov'].dt.year]).sum()
+    x = expense_by_year.index
+    y= -expense_by_year['Valor.1']
+
+    income_by_year= df[df['Valor.1']>0].groupby([df['Mov'].dt.year]).sum()
+    x2 = income_by_year.index
+    y2=  income_by_year['Valor.1']
+
     
+    # plot
+    fig=plt.figure()
+    #plt.figure(1).clear()
     
-    def plotOverview(df, label=False):
-        #converter o plot num funcao e fazer pequenas funcoes para criar o dataframe final: sum dia, mes, ano; e filtro com filterDate
-        expense_values = df[df['Valor.1']<0].groupby(['Mov']).agg("sum")
-        x1 = expense_values.index
-        y1 = -expense_values['Valor.1']
-        y3 = -expense_values['Valor.1'].cumsum()
+    ax=fig.add_subplot(111, label="Spend")
+    #ax.stem(x,y)
 
-        margin_values = df.groupby(['Mov']).agg("sum")
-        x5= margin_values.index
-        y5= margin_values['Valor.1'].cumsum()
-
-
-        income_values = df[df['Valor.1']>0].groupby(['Mov']).agg("sum")
-        x2 = income_values.index
-        y2 = income_values['Valor.1']
-        y4 = income_values['Valor.1'].cumsum()
-
-        # plot
-        fig=plt.figure()
-        plt.figure(1).clear()
-        width = 2
-        ax=fig.add_subplot(111, label="Spend")
-
-        acumulative1=ax.stackplot(x1, y3,alpha=0.2, color='red')
-        acumulative2=ax.stackplot(x2, y4,alpha=0.1, color='green')
-
-        bar1=ax.bar(x1, y1, color='red',width=0.5*width)
-        bar2=ax.bar(x2,y2,color='green',alpha=0.5)
-        line1=ax.plot(x5,y5,color='k', alpha=0.1) 
-        #fig.suptitle('This is a somewhat long figure title', fontsize=16)
-        ax.set(ylabel='Value (€)', xlabel='Time', title='Expenses x Income during time')
-        plt.xticks(rotation=30,ha='right')
-        if label:
-            ax.bar_label(bar1, rotation=30)
-            ax.bar_label(bar2,rotation=30)
-    plotOverview(df,True)
-    
-
-
+    #plotOverview(df,fig,ax,True)
+    #plotOverview(getExpensesOverview(df),getIncomeOverwiew(df),getMarginOverview(df),fig,ax)
+    plotOverview([x,y],[x2,y2],fig, ax)
     plt.show()
 
