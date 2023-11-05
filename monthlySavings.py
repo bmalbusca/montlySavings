@@ -218,31 +218,52 @@ if __name__ == "__main__":
     #expensesBiggest(df)
     print(getDataMonth(df))
     balanceAmount(df)
+    
+    # Perform the groupby operation and store the result in a variable
+    grouped = df[df['Valor.1'] < 0].groupby([df['Mov'].dt.year, df['Mov'].dt.month]).sum()
 
-  
+    # Access a specific group by using the .get_group() method on the GroupBy object
+    group=grouped.loc[2023]
+    # Display the result
+    print(grouped.loc[grouped.index[0]], grouped.index, group.index,group.loc[group.index[0]])
+
+    df[df['Valor.1']<0].groupby([df['Mov'].dt.year]).sum()
+    
+
+
+    #converter o plot num funcao e fazer pequenas funcoes para criar o dataframe final: sum dia, mes, ano; e filtro com filterDate
     expense_values = df[df['Valor.1']<0].groupby(['Mov']).agg("sum")
     x1 = expense_values.index
     y1 = -expense_values['Valor.1']
-
+    y3 = -expense_values['Valor.1'].cumsum()
+    
+    margin_values = df.groupby(['Mov']).agg("sum")
+    x5= margin_values.index
+    y5= margin_values['Valor.1'].cumsum()
+ 
  
     income_values = df[df['Valor.1']>0].groupby(['Mov']).agg("sum")
     x2 = income_values.index
     y2 = income_values['Valor.1']
+    y4 = income_values['Valor.1'].cumsum()
 
      # plot
     fig=plt.figure()
     plt.figure(1).clear()
     width = 2
-    ax=fig.add_subplot(111, label="Spend",picker=True)
+    ax=fig.add_subplot(111, label="Spend")
+    
+    acumulative1=ax.stackplot(x1, y3,alpha=0.2, color='red')
+    acumulative2=ax.stackplot(x2, y4,alpha=0.1, color='green')
 
     bar1=ax.bar(x1, y1, color='red',width=0.5*width)
-    #fig.suptitle('This is a somewhat long figure title', fontsize=16)
     bar2=ax.bar(x2,y2,color='green',alpha=0.5)
-
+    line1=ax.plot(x5,y5,color='k', alpha=0.1) 
+    #fig.suptitle('This is a somewhat long figure title', fontsize=16)
     ax.set(ylabel='Value (€)', xlabel='Time', title='Expenses x Income during time')
     plt.xticks(rotation=30,ha='right')
-    ax.bar_label(bar1, rotation=30)
-    ax.bar_label(bar2,rotation=30)
+    #ax.bar_label(bar1, rotation=30)
+    #ax.bar_label(bar2,rotation=30)
 
     plt.show()
 
