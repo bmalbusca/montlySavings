@@ -1,53 +1,11 @@
-import os
 import datetime
 import pandas
 import tabula
 import matplotlib.pyplot as plt
 from matplotlib.widgets import SpanSelector
+from sysfiles import str2num, getLocalFiles, collectCacheData
 
-def str2num(x: str) -> float:
-    try:
-        return float(x.split()[0].replace('.','').replace(',','.'))
-    except:
-        #print(x)
-        return x
-
-
-def getLocalFiles(debug = False) -> list:
-    existing_files_list = []
-
-    cwd = os.getcwd()
-    dir_list = os.listdir(cwd)
-    if debug:
-        print(dir_list)
-
-    for filename in dir_list:
-        suffixes = filename.split(".")
-        if debug:
-            print(suffixes)
-        if suffixes[-1]=="pdf":
-            existing_files_list.append(filename)
-    if debug:
-        print(existing_files_list)
-    return {cwd : existing_files_list}
-
-
-
-def collectCacheData(cache_name='cached_dataframe.pkl',debug=False):
-    # Read your DataFrame
-    try:
-        read_cache = pandas.read_pickle(cache_name) # read from current directory
-        if debug:
-            print("[LOAD]: Loading cache data", read_cache)
-
-        if not read_cache.empty :
-            return read_cache
-    except:
-        if debug:
-            print("[ALERT]: No cached data")
-    return None
-
-def readPDFSantander(file_dir="~/Downloads/extracto.pdf", debug=False, filter_set_column={'Mov', 'Valor', 'Descritivo do Movimento','Valor.1' ,'Saldo'}, store_incache=True):
+def readPDF(file_dir="~/Downloads/extracto.pdf", debug=False, filter_set_column={'Mov', 'Valor', 'Descritivo do Movimento','Valor.1' ,'Saldo'}, store_incache=None, cache_name='cached_dataframe.pkl'):
 
     tables = tabula.read_pdf(file_dir, pages="all")
     print(tables)
@@ -76,8 +34,9 @@ def readPDFSantander(file_dir="~/Downloads/extracto.pdf", debug=False, filter_se
         print(df)
     df['Valor']=year
     # Store your DataFrame
-    if store_incache:
-        df.to_pickle('cached_dataframe.pkl') # will be stored in current directory
+    if store_incache is not None:
+        #df.to_pickle('cached_dataframe.pkl') # will be stored in current directory store_incache->df.to_pickle
+        store_incache(cache_name)
     
     return df
 
@@ -85,25 +44,6 @@ def existsNaNDataframe(df, column='Saldo'):
     print("Nan Values:",df[column].isnull().values.any()) #There is nan
     print("Nan Values Indexes:",list(df.loc[pandas.isna(df[column]), :].index)) #return the indexes
     print(df.loc[pandas.isna(df[column]), :]) # return the rows with nan
-
-def parseDataframe(df):
-    df=df.dropna(subset=['Saldo']).reset_index(drop=True)
-    df['Saldo']=df['Saldo'].apply(str2num)
-    df= df.dropna(subset=['Valor.1']).reset_index(drop=True)
-    df['Valor.1'] =df['Valor.1'].apply(str2num)
-    # change this read the value of Valor or gettign the year by intput
-    df['Mov']=df['Mov'].apply(lambda x: str(x)+'-'+str(2023))
-    df['Mov'] = pandas.to_datetime(df['Mov'],errors='coerce', format='%d-%m-%Y')
-    df.drop_duplicates(inplace=True)
-    df.sort_values(by='Mov',inplace=True)
-    df.reset_index(inplace=True,drop=True)
-    return df
- 
-def balanceAmount(df, column='Saldo'):
-    value0= df[column].iloc[0]-df['Valor.1'].iloc[0]
-    valuet= df[column].iloc[-1]
-    diffvalue=float(valuet)-float(value0)
-    print("Inicio:", df['Mov'].iloc[0],value0,"€   Fim: ", df['Mov'].iloc[-1], valuet, "€  Resultado:", diffvalue,"€")
 
 ## example: filterDate(df,'2023-07-11','2023-07-13' ))
 def filterDate(df, start, end_date=False, debug=False):
@@ -118,7 +58,24 @@ def filterDate(df, start, end_date=False, debug=False):
     
     return df[mask]
 
+def parseDataframe(df):
+    df=df.dropna(subset=['Saldo']).reset_index(drop=True)
+    df['Saldo']=df['Saldo'].apply(str2num)
+    df= df.dropna(subset=['Valor.1']).reset_index(drop=True)
+    df['Valor.1'] =df['Valor.1'].apply(str2num)
+    # change this read the value of Valor or gettign the year by intput
+    df['Mov']=df['Mov'].apply(lambda x: str(x)+'-'+str(2023))
+    df['Mov'] = pandas.to_datetime(df['Mov'],errors='coerce', format='%d-%m-%Y')
+    df.drop_duplicates(inplace=True)
+    df.sort_values(by='Mov',inplace=True)
+    df.reset_index(inplace=True,drop=True)
+    return df
 
+def balanceAmount(df, column='Saldo'):
+    value0= df[column].iloc[0]-df['Valor.1'].iloc[0]
+    valuet= df[column].iloc[-1]
+    diffvalue=float(valuet)-float(value0)
+    print("Inicio:", df['Mov'].iloc[0],value0,"€   Fim: ", df['Mov'].iloc[-1], valuet, "€  Resultado:", diffvalue,"€")
 
 ## Despesas e ganhos por mes, selecionar mes e valor medio de gastos e valores maximo e minimos 
 def expensesBiggest(df,threshold=10):
@@ -287,7 +244,7 @@ if __name__ == "__main__":
 
 
     file_list =getLocalFiles()
-    df=collectCacheData(debug=False)
+    df=collectCacheData(debug=False,collect_cache_func=pandas.read_pickle, bool_assert_cache_func=(lambda dataframe: dataframe.empty))
 
     if isinstance(df, type(None)) == True: #does not existe data
         df = pandas.DataFrame()
@@ -295,7 +252,7 @@ if __name__ == "__main__":
         for fdir in list(file_list.keys()):
             for filename in file_list[fdir]:
                 complete_dir = fdir+'/'+filename
-                s = readPDFSantander(file_dir=complete_dir,store_incache=False)
+                s = readPDF(file_dir=complete_dir)
                 #print(s)
                 new_file=True
                 df=pandas.concat([df,s])
@@ -312,7 +269,7 @@ if __name__ == "__main__":
             for filename in file_list[fdir]:
                 complete_dir = fdir+'/'+filename
                 if complete_dir  not in cache_file_list:
-                    s = readPDFSantander(file_dir=complete_dir,store_incache=False)
+                    s = readPDFSantander(file_dir=complete_dir)
                     s = parseDataframe(s)
                     df=pandas.concat([df,s])
                     new_file=True
