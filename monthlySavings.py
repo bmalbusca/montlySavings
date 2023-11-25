@@ -1,4 +1,5 @@
 import os
+import datetime
 import pandas
 import tabula
 import matplotlib.pyplot as plt
@@ -192,7 +193,7 @@ def getIncomeOverwiew(df):
 
 
 
-def plotOverview(df,fig,ax,label=False):
+def plotOverviewDF(df,fig,ax,label=False):
         #converter o plot num funcao e fazer pequenas funcoes para criar o dataframe final: sum dia, mes, ano; e filtro com filterDate
         expense_values = df[df['Valor.1']<0].groupby(['Mov']).agg("sum")
         x1 = expense_values.index
@@ -257,7 +258,7 @@ def plotOverview(expense_values,income_values,margin_values, fig,ax,label=True,a
             ax.bar_label(bar1, rotation=30)
             ax.bar_label(bar2,rotation=30)
   
-def plotOverview(expense_values,income_values,fig,ax,label=True):
+def plotSimple(expense_values,income_values,fig,ax,label=True):
 
         x1 = expense_values[0]
         y1 = expense_values[1]
@@ -332,10 +333,21 @@ if __name__ == "__main__":
     # Perform the groupby operation and store the result in a variable
     grouped = df[df['Valor.1'] < 0].groupby([df['Mov'].dt.year, df['Mov'].dt.month]).sum()
 
+    #print(grouped['Valor.1'],grouped.index[0][1])
+ 
+    ## By month
+    x_grouplist=[]
+    for i in grouped.index:
+            x_grouplist.append(datetime.datetime.strptime(str(i[0])+'-'+str(i[1]), '%Y-%m'))
+    print(x_grouplist)
+    sdf=grouped.reset_index(drop=True) #expenses_by_month
+    sdf['Mov']=x_grouplist
+    print(sdf.head())
+    print(sdf['Mov'],sdf['Valor.1'])
     # Access a specific group by using the .get_group() method on the GroupBy object
-    group=grouped.loc[2023]
+    #group=grouped.loc[2023]
     # Display the result
-    #print(grouped.loc[grouped.index[0]], grouped.index, group.index,group.loc[group.index[0]])
+    #print(grouped.loc[grouped.index[0]], grouped.index, group.index,group.loc[group.index[0]]
 
     expense_by_year= df[df['Valor.1']<0].groupby([df['Mov'].dt.year]).sum()
     x = expense_by_year.index
@@ -349,12 +361,14 @@ if __name__ == "__main__":
     # plot
     fig=plt.figure()
     #plt.figure(1).clear()
+    ax=fig.add_subplot(111)# 121 for 3 plot at same time
+    #ax2=fig.add_subplot(224, label="Spend")
+    #ax2.stem(x,y)
+    #ax1=fig.add_subplot(222, label="montly Spend")
+    #ax1.bar(sdf['Mov'].values,-sdf['Valor.1'])
     
-    ax=fig.add_subplot(111, label="Spend")
-    #ax.stem(x,y)
-
-    #plotOverview(df,fig,ax,True)
+    plotOverviewDF(df,fig,ax)
     #plotOverview(getExpensesOverview(df),getIncomeOverwiew(df),getMarginOverview(df),fig,ax)
-    plotOverview([x,y],[x2,y2],fig, ax)
+    #plotSimple([x,y],[x2,y2],fig, ax)
     plt.show()
 
