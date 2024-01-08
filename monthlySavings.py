@@ -1,9 +1,160 @@
+import sys
 import datetime
 import pandas
 import tabula
 import matplotlib.pyplot as plt
 from matplotlib.widgets import SpanSelector
 from sysfiles import str2num, getLocalFiles, collectCacheData
+
+def parseDataframe(df):
+    try:
+        # Drop rows with NaN in 'Saldo' and 'Valor.1' columns
+        df = df.dropna(subset=['Saldo', 'Valor.1']).reset_index(drop=True)
+        # Apply str2num function to 'Saldo' and 'Valor.1' columns
+        df[['Saldo', 'Valor.1']] = df[['Saldo', 'Valor.1']].applymap(str2num)
+        # Combine 'Mov' with the predefined year and convert to datetime
+        df['Mov'] = pandas.to_datetime(df['Mov'].astype(str) + '-2023', errors='coerce', format='%d-%m-%Y')
+        # Drop duplicates, sort by 'Mov', and reset index
+        df = df.drop_duplicates().sort_values(by='Mov').reset_index(drop=True)
+    except:
+        df=None
+
+    return df
+
+def existsNaNDataframe(df, column='Saldo'):
+    print("Nan Values:",df[column].isnull().values.any()) #There is nan
+    print("Nan Values Indexes:",list(df.loc[pandas.isna(df[column]), :].index)) #return the indexes
+    print(df.loc[pandas.isna(df[column]), :]) # return the rows with nan
+
+## example: filterDate(df,'2023-07-11','2023-07-13' ))
+def filterDate(df, start, end_date=False, debug=False):
+    if end_date:
+        mask = (df['Mov'] >= start) & (df['Mov'] <= end_date)
+    else:
+        mask = (df['Mov'] >= start)
+
+    if debug:
+        print(mask.to_string())
+        print(df[mask])
+    
+    return df[mask]
+
+
+class FinancialDataProcessor:
+    def __init__(self, input_df=None):
+        self.df = None
+        if input_df is not None:
+            self.df = ParseNewData(input_df, parseDataframe)
+     
+    def ParseNewData(self, df, parsing_func, store_incache=None, cache_name='cached_dataframe.pkl', debug=False):
+        # Call the parsing function
+        df = parsing_func(df)
+
+        if debug:
+            print(df.to_string())
+
+        # Store the DataFrame to pickle file if store_incache is provided
+        if store_incache is not None and cache_name is not None:
+            store_incache(cache_name)
+        
+        if debug:
+            print("\n\n after parsing_func ParseNewData call:\n", df.to_string())
+
+        return df
+
+
+    def balanceAmount(self, df, column='Saldo'):
+        value0 = float(df[column].iloc[0]) - float(df['Valor.1'].iloc[0])
+        valuet = float(df[column].iloc[-1])
+        diffvalue = float(valuet) - float(value0)
+        result = {
+            'Inicio': (df['Mov'].iloc[0], value0),
+            'Fim': (df['Mov'].iloc[-1], valuet),
+            'Resultado': diffvalue
+        }
+        print("Inicio:", df['Mov'].iloc[0],value0,"€   Fim: ", df['Mov'].iloc[-1], valuet, "€  Resultado:", diffvalue,"€")
+        return result
+
+    def expensesBiggest(self, df, threshold=10):
+        print("======= " + str(threshold) + " Maiores Despesas ========")
+        result = df.nsmallest(threshold, 'Valor.1', keep='all')[['Mov', 'Descritivo do Movimento', 'Valor.1']]
+        #print(result)
+        print(" ")
+        return result
+
+    def expensesAbove(self, df, threshold=10):
+        print("======= Compras acima de " + str(threshold) + " euros ========")
+        result = df[df['Valor.1'] < -threshold][['Mov', 'Descritivo do Movimento', 'Valor.1']]
+        #print(result)
+        print(" ")
+        return result
+
+    def expensesReceiver(self, df, threshold=10):
+        print("======= " + str(threshold) + " Maiores Recebedores =======")
+        receivers = df.groupby("Descritivo do Movimento")["Valor.1"].sum()
+        result = receivers.nsmallest(threshold).reset_index()
+        #print(result)
+        print(" ")
+        return result
+
+    def expensesRecurring(self, df, threshold=10):
+        print("======= " + str(threshold) + " Despesas Mais Recorrentes =======")
+        recurring_exp = df[(df['Valor.1'] < 0)].groupby("Descritivo do Movimento").size().to_frame(name='size').reset_index().sort_values(by='size', ascending=False)
+        rec_merge = pd.merge(receivers, recurring_exp, on="Descritivo do Movimento", how='inner')
+        result = rec_merge.sort_values(by='size', ascending=False).rename(columns={'Valor.1': 'Soma', 'size': 'Ocurrencias'}).head(threshold)
+        #print(result)
+        return result
+
+    def expensesAnalytics(self,df, column='Valor.1'):
+
+        total_expense=(df[df[column]<0][column].sum())
+        expense_avg=(df[df[column]<0][column].mean())
+        expense_max=(df[df[column]<0][column].max())
+        expense_min=(df[df[column]<0][column].min())
+        
+        duration= (df['Mov'].iloc[-1] - df['Mov'].iloc[0])
+        expense_avg_day=total_expense/float(duration.days)
+
+        return [total_expense,expense_avg, expense_avg_day, expense_min, expense_max]
+
+    def earningsAnalytics(self,df, column='Valor.1'):
+
+        total_earning=(df[df[column]>0][column].sum())
+        earning_avg=(df[df[column]>0][column].mean())
+        earning_max=(df[df[column]>0][column].max())
+        earning_min=(df[df[column]>0][column].min())
+        
+        duration= (df['Mov'].iloc[-1] - df['Mov'].iloc[0])
+        earning_avg_day=total_earning/float(duration.days)
+
+        return [total_earning, earning_avg, earning_avg_day, earning_max, earning_min]
+
+    def getDataMonth(self,df, column='Mov'):
+        return (df[column].dt.month.unique())
+
+
+    def getExpensesOverview(self,df):
+         expense_values = df[df['Valor.1']<0].groupby(['Mov']).agg("sum")
+         idx_expense_values= expense_values.index
+         acc_expense_values=  expense_values['Valor.1'].cumsum()
+         #print(idx_expense_values, expense_values)
+         return [idx_expense_values,-expense_values['Valor.1'], -acc_expense_values]
+
+    def getMarginOverview(self,df):
+        margin_values = df.groupby(['Mov']).agg("sum")
+        idx_margin_values = margin_values.index
+        acc_margin_values = margin_values['Valor.1'].cumsum()
+
+        return [idx_margin_values,margin_values['Valor.1'], acc_margin_values]
+
+    def getIncomeOverwiew(self,df):
+            income_values = df[df['Valor.1']>0].groupby(['Mov']).agg("sum")
+            idx_income_values  = income_values.index
+            acc_income_values = income_values['Valor.1'].cumsum()
+            
+            return [idx_income_values, income_values['Valor.1'], acc_income_values]
+
+
 
 def readPDF(file_dir="~/Downloads/extracto.pdf", debug=False, filter_set_column={'Mov', 'Valor', 'Descritivo do Movimento','Valor.1' ,'Saldo'}, store_incache=None, cache_name='cached_dataframe.pkl'):
 
@@ -42,104 +193,7 @@ def readPDF(file_dir="~/Downloads/extracto.pdf", debug=False, filter_set_column=
     
     return df
 
-def existsNaNDataframe(df, column='Saldo'):
-    print("Nan Values:",df[column].isnull().values.any()) #There is nan
-    print("Nan Values Indexes:",list(df.loc[pandas.isna(df[column]), :].index)) #return the indexes
-    print(df.loc[pandas.isna(df[column]), :]) # return the rows with nan
 
-## example: filterDate(df,'2023-07-11','2023-07-13' ))
-def filterDate(df, start, end_date=False, debug=False):
-    if end_date:
-        mask = (df['Mov'] >= start) & (df['Mov'] <= end_date)
-    else:
-        mask = (df['Mov'] >= start)
-
-    if debug:
-        print(mask.to_string())
-        print(df[mask])
-    
-    return df[mask]
-
-
-
-def balanceAmount(df, column='Saldo'):
-    value0= df[column].iloc[0]-df['Valor.1'].iloc[0]
-    valuet= df[column].iloc[-1]
-    diffvalue=float(valuet)-float(value0)
-    print("Inicio:", df['Mov'].iloc[0],value0,"€   Fim: ", df['Mov'].iloc[-1], valuet, "€  Resultado:", diffvalue,"€")
-
-## Despesas e ganhos por mes, selecionar mes e valor medio de gastos e valores maximo e minimos 
-def expensesBiggest(df,threshold=10):
-    print("======= 10 Maiores Despesas ========")
-    print(df.nsmallest(threshold,'Valor.1', keep='all')[['Mov','Descritivo do Movimento', 'Valor.1']])
-    print(" ")
-
-def expensesAbove(df,threshold=10):
-    print("======= Compras acima de 10 euros ========")
-    print(df[df['Valor.1']<-threshold][['Mov','Descritivo do Movimento', 'Valor.1']])
-    print(" ")
-
-def expensesReceiver(df,threshold=10):
-    print("======= 10 Maiores Recebedores =======")
-    receivers= df.groupby("Descritivo do Movimento")["Valor.1"].sum()
-    print(receivers.nsmallest(threshold).reset_index())
-    print(" ")
-
-def expensesRecurring(df,threshold=10):
-    print("======= 10 Despesas Mais Recorrentes =======")
-    recurring_exp = df[(df['Valor.1'] < 0)].groupby("Descritivo do Movimento").size().to_frame(name = 'size').reset_index().sort_values(by='size', ascending=False)
-    #print(recurring_exp.head(10))
-    rec_merge = pandas.merge( receivers, recurring_exp, on="Descritivo do Movimento", how='inner') 
-    print(rec_merge.sort_values(by='size', ascending=False).rename(columns = {'Valor.1':'Soma', 'size':'Ocurrencias'}).head(threshold))
-
-def expensesAnalytics(df, column='Valor.1'):
-
-    total_expense=(df[df[column]<0][column].sum())
-    expense_avg=(df[df[column]<0][column].mean())
-    expense_max=(df[df[column]<0][column].max())
-    expense_min=(df[df[column]<0][column].min())
-    
-    duration= (df['Mov'].iloc[-1] - df['Mov'].iloc[0])
-    expense_avg_day=total_expense/float(duration.days)
-
-    return [total_expense,expense_avg, expense_avg_day, expense_min, expense_max]
-
-def earningsAnalytics(df, column='Valor.1'):
-
-    total_earning=(df[df[column]>0][column].sum())
-    earning_avg=(df[df[column]>0][column].mean())
-    earning_max=(df[df[column]>0][column].max())
-    earning_min=(df[df[column]>0][column].min())
-    
-    duration= (df['Mov'].iloc[-1] - df['Mov'].iloc[0])
-    earning_avg_day=total_earning/float(duration.days)
-
-    return [total_earning, earning_avg, earning_avg_day, earning_max, earning_min]
-
-def getDataMonth(df, column='Mov'):
-    return (df[column].dt.month.unique())
-
-
-def getExpensesOverview(df):
-     expense_values = df[df['Valor.1']<0].groupby(['Mov']).agg("sum")
-     idx_expense_values= expense_values.index
-     acc_expense_values=  expense_values['Valor.1'].cumsum()
-     #print(idx_expense_values, expense_values)
-     return [idx_expense_values,-expense_values['Valor.1'], -acc_expense_values]
-
-def getMarginOverview(df):
-    margin_values = df.groupby(['Mov']).agg("sum")
-    idx_margin_values = margin_values.index
-    acc_margin_values = margin_values['Valor.1'].cumsum()
-
-    return [idx_margin_values,margin_values['Valor.1'], acc_margin_values]
-
-def getIncomeOverwiew(df):
-        income_values = df[df['Valor.1']>0].groupby(['Mov']).agg("sum")
-        idx_income_values  = income_values.index
-        acc_income_values = income_values['Valor.1'].cumsum()
-        
-        return [idx_income_values, income_values['Valor.1'], acc_income_values]
 
 
 
@@ -227,19 +281,33 @@ def plotSimple(expense_values,income_values,fig,ax,label=True):
         if label:
             ax.bar_label(bar1, rotation=30)
             ax.bar_label(bar2,rotation=30)
-  
-def parseDataframe(df):
-    df = df.dropna(subset=['Saldo']).reset_index(drop=True)
-    df['Saldo'] = df['Saldo'].apply(str2num)
-    df = df.dropna(subset=['Valor.1']).reset_index(drop=True)
-    df['Valor.1'] = df['Valor.1'].apply(str2num)
 
-    # change this read the value of Valor or gettign the year by intput
-    df['Mov'] = df['Mov'].apply(lambda x: str(x) + '-' + str(2023))
-    df['Mov'] = pandas.to_datetime(df['Mov'], errors='coerce', format='%d-%m-%Y')
-    df.drop_duplicates(inplace=True)
-    df.sort_values(by='Mov', inplace=True)
-    df.reset_index(inplace=True, drop=True)
+
+def processDirectoryFiles(file_list, read_file_func):
+    df = pandas.DataFrame()
+    count = 0
+    for fdir in list(file_list.keys()):
+        for filename in file_list[fdir]:
+            complete_dir = fdir+'/'+filename
+            s = read_file_func(complete_dir)
+            df = pandas.concat([df, s])
+            count += 1
+    return df, count
+
+def processDataWithCache(file_list, df_cache, parse_func, read_func=readPDF):
+    if df_cache is None or df_cache.empty:  # Check if cache does not exist or is empty
+        dir_file_list = file_list
+    else:
+        cached_file_list = set(df_cache['Filename'].unique())
+        dir_file_list = {key: [item for item in values if item not in cached_file_list] for key, values in file_list.items()}
+
+    # Example usage of the modified processDirectoryFiles function
+    df, count = processDirectoryFiles(dir_file_list, read_file_func=read_func)
+
+    if count:
+        df = parse_func(df)
+        if df_cache is not None and not df_cache.empty:
+            df = pd.concat([df, df_cache])
 
     return df
 
@@ -248,87 +316,80 @@ if __name__ == "__main__":
     read_cache = None
     df=None
     debug=False
+    processor =FinancialDataProcessor()
 
-   
-    def processDirectoryFiles(file_list):
-        df = pandas.DataFrame()
-        count=0
-        for fdir in list(file_list.keys()):
-            for filename in file_list[fdir]:
-                complete_dir = fdir+'/'+filename
-                s = readPDF(file_dir=complete_dir)
-                df=pandas.concat([df,s])
-                count = count+1
-        return df,count
-
-    #store_incache= df.to_pickle, parsing_func=parseDataframe
-    def ParseNewData(df, parsing_func, store_incache=None, cache_name='cached_dataframe.pkl', debug=False):
-        df=parsing_func(df)
-        if debug:
-            print(df.to_string())
-        if cache_name is not None:
-            store_incache(cache_name)
-            #df.to_pickle(cache_name) # will be stored in current directory
-        print("\n\n after parsing_func ParseNewData call:\n", df.to_string())
-        return df
     
     df_cache=collectCacheData(debug=False,collect_cache_func=pandas.read_pickle, bool_assert_cache_func=(lambda dataframe: dataframe.empty))
     file_list =getLocalFiles()
- 
+    #print("getLocalFiles() result:")
+    #print(file_list)
+    #print("\n")
+    #print("Cached data \n", "line 322-is none?",(isinstance(df_cache, type(None)) == False),'\n', df_cache)
 
     if isinstance(df_cache, type(None)) == False: #does not existe data
-        #print(file_list)
+
+        #print("Cached_file_list from df unique:")
         cached_file_list= df_cache['Filename'].unique()
-        dir_file_list = {key: [item for item in values if item not in set(cached_file_list)] for key, values in file_list.items()}
+        #print(cached_file_list)
+        #print("\n")
+
+        filtered_file=[]
+        dir_file_list={}
+        for keys in file_list:
+            for cached_filename in cached_file_list:
+                #print("is in this cached list?", file_list[keys],"\n")
+                #print("last stripped",cached_filename, cached_filename.split('/'),"\n") 
+                if cached_filename.split("/")[-1] not in file_list[keys]:
+                    print(cached_filename.split("/")[-1]," is a new file to explore\n")
+                    filtered_file.append(file_list[keys])
+
+            dir_file_list[keys]=filtered_file
+            #print("final dict to pass", dir_file_list)
+
+        #dir_file_list = {key: [item for item in values if item not in set(cached_file_list)] for key, values in file_list.items()}
+        #print("other files exist")
     else:
+        print("line 352-Alert: Does not exists stored data (cache)\n")
         dir_file_list =file_list
-    #print(dir_file_list)
-    df,count=processDirectoryFiles(dir_file_list)
+    
+    print(dir_file_list)
+    # Example usage of the modified processDirectoryFiles function
+    df, count = processDirectoryFiles(dir_file_list, read_file_func=readPDF)
 
-    #if count:
-    df = ParseNewData(df,parsing_func=parseDataframe,store_incache= df.to_pickle,debug=True)
-    #if df_cache is not None:
-    #    df = pandas.concat([df,df_cache])
+    #print("after processDirectoryFiles()", df, count, "\n")
 
-    # if isinstance(df, type(None)) == True: #does not existe data
-    #     df = pandas.DataFrame()
-    #     new_file=False
-    #     for fdir in list(file_list.keys()):
-    #         for filename in file_list[fdir]:
-    #             complete_dir = fdir+'/'+filename
-    #             s = readPDF(file_dir=complete_dir)
-    #             #print(s)
-    #             new_file=True
-    #             df=pandas.concat([df,s])
-    #     if new_file:
-    #         df=parseDataframe(df)
-    #         if debug:
-    #             print(df.to_string())
-    #         df.to_pickle('cached_dataframe.pkl') # will be stored in current directory
+    if count:
+        #print("there is a count", count, "\n")
+        df = processor.ParseNewData(df,parsing_func=parseDataframe,store_incache= df.to_pickle)
+        #print("new data parsed", df, "\n")
+   
+    if isinstance(df_cache, type(None)) == False:
+        #print("yes, df_cache is not empty \n")
+        df = pandas.concat([df,df_cache])
+        
+        #print("final df with already exisiting data", df.to_string)
+        df = processor.ParseNewData(df,parsing_func=parseDataframe,store_incache= df.to_pickle)
+    else:
+        if  not(count):
+            print("line-369 No Data Available.")
+            sys.exit(0)
 
-    # else: #see this else routine
-    #     cache_file_list= df['Filename'].unique()
-    #     new_file=False
-    #     for fdir in list(file_list.keys()):
-    #         for filename in file_list[fdir]:
-    #             complete_dir = fdir+'/'+filename
-    #             if complete_dir  not in cache_file_list:
-    #                 s = readPDF(file_dir=complete_dir)
-    #                 s = parseDataframe(s)
-    #                 df=pandas.concat([df,s])
-    #                 new_file=True
-    #     if new_file:
-    #         df=parseDataframe(df)
-    #         if debug:
-    #             print(df.to_string())
-    #         df.to_pickle('cached_dataframe.pkl') # will be stored in current directory
 
-    print(expensesAnalytics(df))
-    print(earningsAnalytics(df))
-    #expensesAbove(df,30)
-    #expensesBiggest(df)
-    print(getDataMonth(df))
-    balanceAmount(df)
+
+    print(processor.balanceAmount(df))
+    print("processor.expensesAnalytics(df)")
+    print(processor.expensesAnalytics(df))
+    print("processor.earningsAnalytics(df)")
+    print(processor.earningsAnalytics(df))
+    print(processor.expensesAbove(df,100))
+    print(processor.expensesBiggest(df))
+
+    print("Months Available: processor.getDataMonth(df) \n")
+    print(processor.getDataMonth(df))
+
+
+    print("\n\n Prepare data for plot \n\n")
+    
     
     # Perform the groupby operation and store the result in a variable
     grouped = df[df['Valor.1'] < 0].groupby([df['Mov'].dt.year, df['Mov'].dt.month]).sum()
