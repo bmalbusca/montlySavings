@@ -6,16 +6,28 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import SpanSelector
 from sysfiles import str2num, getLocalFiles, collectCacheData
 
-def parseDataframe(df):
+def processDirectoryFiles(file_list, read_file_func):
+    df = pandas.DataFrame()
+    count = 0
+    for fdir in list(file_list.keys()):
+        for filename in file_list[fdir]:
+            complete_dir = fdir+'/'+filename
+            s = read_file_func(complete_dir)
+            df = pandas.concat([df, s])
+            count += 1
+    return df, count
+
+
+def parseDataframe(df, columns={"Balance":"Saldo","Value":"Valor.1", "Date":"Mov", "Info":"Descritivo do Movimento", "Group":"Valor", "Filename":"Filename"}):
     try:
         # Drop rows with NaN in 'Saldo' and 'Valor.1' columns
-        df = df.dropna(subset=['Saldo', 'Valor.1']).reset_index(drop=True)
+        df = df.dropna(subset=[columns["Balance"], columns["Value"]]).reset_index(drop=True)
         # Apply str2num function to 'Saldo' and 'Valor.1' columns
-        df[['Saldo', 'Valor.1']] = df[['Saldo', 'Valor.1']].applymap(str2num)
+        df[[columns["Balance"], columns["Value"]]] = df[[columns["Balance"], columns["Value"]]].applymap(str2num)
         # Combine 'Mov' with the predefined year and convert to datetime
-        df['Mov'] = pandas.to_datetime(df['Mov'].astype(str) + '-2023', errors='coerce', format='%d-%m-%Y')
+        df[columns["Date"]] = pandas.to_datetime(df[columns["Date"]].astype(str) + '-2023', errors='coerce', format='%d-%m-%Y')
         # Drop duplicates, sort by 'Mov', and reset index
-        df = df.drop_duplicates().sort_values(by='Mov').reset_index(drop=True)
+        df = df.drop_duplicates().sort_values(by=columns["Date"]).reset_index(drop=True)
     except:
         df=None
 
@@ -27,11 +39,11 @@ def existsNaNDataframe(df, column='Saldo'):
     print(df.loc[pandas.isna(df[column]), :]) # return the rows with nan
 
 ## example: filterDate(df,'2023-07-11','2023-07-13' ))
-def filterDate(df, start, end_date=False, debug=False):
+def filterDate(df, start, end_date=False,column='Mov', debug=False):
     if end_date:
-        mask = (df['Mov'] >= start) & (df['Mov'] <= end_date)
+        mask = (df[column] >= start) & (df[column] <= end_date)
     else:
-        mask = (df['Mov'] >= start)
+        mask = (df[column] >= start)
 
     if debug:
         print(mask.to_string())
@@ -43,12 +55,13 @@ def filterDate(df, start, end_date=False, debug=False):
 class FinancialDataProcessor:
     def __init__(self, input_df=None):
         self.df = None
+        self.columns = {"Balance":"Saldo","Value":"Valor.1", "Date":"Mov", "Info":"Descritivo do Movimento", "Group":"Valor", "Filename":"Filename"}
         if input_df is not None:
             self.df = ParseNewData(input_df, parseDataframe)
      
     def ParseNewData(self, df, parsing_func, store_incache=None, cache_name='cached_dataframe.pkl', debug=False):
         # Call the parsing function
-        df = parsing_func(df)
+        df = parsing_func(df,self.columns)
 
         if debug:
             print(df.to_string())
@@ -63,96 +76,211 @@ class FinancialDataProcessor:
         return df
 
 
-    def balanceAmount(self, df, column='Saldo'):
-        value0 = float(df[column].iloc[0]) - float(df['Valor.1'].iloc[0])
-        valuet = float(df[column].iloc[-1])
+    def balanceAmount(self, df, column=None):
+        if column is None:
+            column=self.columns
+
+        value0 = float(df[column['Balance']].iloc[0]) - float(df[column['Value']].iloc[0])
+        valuet = float(df[column['Balance']].iloc[-1])
         diffvalue = float(valuet) - float(value0)
         result = {
-            'Inicio': (df['Mov'].iloc[0], value0),
-            'Fim': (df['Mov'].iloc[-1], valuet),
+            'Inicio': (df[column['Date']].iloc[0], value0),
+            'Fim': (df[column['Date']].iloc[-1], valuet),
             'Resultado': diffvalue
         }
-        print("Inicio:", df['Mov'].iloc[0],value0,"€   Fim: ", df['Mov'].iloc[-1], valuet, "€  Resultado:", diffvalue,"€")
+        print("Inicio:", df[column['Date']].iloc[0],value0,"€   Fim: ", df[column['Date']].iloc[-1], valuet, "€  Resultado:", diffvalue,"€")
         return result
 
-    def expensesBiggest(self, df, threshold=10):
+    # column={ 'Info': 'Descritivo do Movimento','Balance':'Saldo','Value':'Valor.1', 'Date':'Mov'}
+    def expensesBiggest(self, df, threshold=10,column=None):
+        if column is None:
+            column=self.columns
         print("======= " + str(threshold) + " Maiores Despesas ========")
-        result = df.nsmallest(threshold, 'Valor.1', keep='all')[['Mov', 'Descritivo do Movimento', 'Valor.1']]
+        result = df.nsmallest(threshold, column['Value'], keep='all')[[column['Date'], column['Info'], column['Value']]]
         #print(result)
         print(" ")
         return result
 
-    def expensesAbove(self, df, threshold=10):
+    #column={ 'Info': 'Descritivo do Movimento','Balance':'Saldo','Value':'Valor.1', 'Date':'Mov'}
+    def expensesAbove(self, df, threshold=10, column=None):
+        if column is None:
+            column=self.columns
         print("======= Compras acima de " + str(threshold) + " euros ========")
-        result = df[df['Valor.1'] < -threshold][['Mov', 'Descritivo do Movimento', 'Valor.1']]
+        result = df[df[column['Value']] < -threshold][[column['Date'], column['Info'], column['Value']]]
         #print(result)
         print(" ")
         return result
 
-    def expensesReceiver(self, df, threshold=10):
+    def expensesReceiver(self, df, threshold=10,column=None):
+        if column is None:
+            column=self.columns
         print("======= " + str(threshold) + " Maiores Recebedores =======")
-        receivers = df.groupby("Descritivo do Movimento")["Valor.1"].sum()
+        receivers = df.groupby(column['Info'])[column['Value']].sum()
         result = receivers.nsmallest(threshold).reset_index()
         #print(result)
         print(" ")
         return result
 
-    def expensesRecurring(self, df, threshold=10):
+    def expensesRecurring(self, df, threshold=10, column=None):
+        if column is None:
+            column=self.columns
         print("======= " + str(threshold) + " Despesas Mais Recorrentes =======")
-        recurring_exp = df[(df['Valor.1'] < 0)].groupby("Descritivo do Movimento").size().to_frame(name='size').reset_index().sort_values(by='size', ascending=False)
-        rec_merge = pd.merge(receivers, recurring_exp, on="Descritivo do Movimento", how='inner')
-        result = rec_merge.sort_values(by='size', ascending=False).rename(columns={'Valor.1': 'Soma', 'size': 'Ocurrencias'}).head(threshold)
+        recurring_exp = df[(df[column['Value']] < 0)].groupby(column['Info']).size().to_frame(name='size').reset_index().sort_values(by='size', ascending=False)
+        rec_merge = pd.merge(receivers, recurring_exp, on=column['Info'], how='inner')
+        result = rec_merge.sort_values(by='size', ascending=False).rename(columns={column['Value']: 'Sum', 'size': 'Occurrences'}).head(threshold)
         #print(result)
         return result
 
-    def expensesAnalytics(self,df, column='Valor.1'):
+    def expensesAnalytics(self,df, column=None):
+        if column is None:
+            column=self.columns
 
-        total_expense=(df[df[column]<0][column].sum())
-        expense_avg=(df[df[column]<0][column].mean())
-        expense_max=(df[df[column]<0][column].max())
-        expense_min=(df[df[column]<0][column].min())
+        total_expense=(df[df[column['Value']]<0][column['Value']].sum())
+        expense_avg=(df[df[column['Value']]<0][column['Value']].mean())
+        expense_max=(df[df[column['Value']]<0][column['Value']].max())
+        expense_min=(df[df[column['Value']]<0][column['Value']].min())
         
-        duration= (df['Mov'].iloc[-1] - df['Mov'].iloc[0])
+        duration= (df[column['Date']].iloc[-1] - df[column['Date']].iloc[0])
         expense_avg_day=total_expense/float(duration.days)
 
         return [total_expense,expense_avg, expense_avg_day, expense_min, expense_max]
 
-    def earningsAnalytics(self,df, column='Valor.1'):
+    def earningsAnalytics(self,df, column=None):
+        if column is None:
+            column=self.columns
 
-        total_earning=(df[df[column]>0][column].sum())
-        earning_avg=(df[df[column]>0][column].mean())
-        earning_max=(df[df[column]>0][column].max())
-        earning_min=(df[df[column]>0][column].min())
+        total_earning=(df[df[column['Value']]>0][column['Value']].sum())
+        earning_avg=(df[df[column['Value']]>0][column['Value']].mean())
+        earning_max=(df[df[column['Value']]>0][column['Value']].max())
+        earning_min=(df[df[column['Value']]>0][column['Value']].min())
         
-        duration= (df['Mov'].iloc[-1] - df['Mov'].iloc[0])
+        duration= (df[column['Date']].iloc[-1] - df[column['Date']].iloc[0])
         earning_avg_day=total_earning/float(duration.days)
 
         return [total_earning, earning_avg, earning_avg_day, earning_max, earning_min]
 
-    def getDataMonth(self,df, column='Mov'):
-        return (df[column].dt.month.unique())
+    def getDataMonth(self,df, column=None):
+        if column is None:
+            column=self.columns
+        return (df[column['Date']].dt.month.unique())
 
 
-    def getExpensesOverview(self,df):
-         expense_values = df[df['Valor.1']<0].groupby(['Mov']).agg("sum")
-         idx_expense_values= expense_values.index
-         acc_expense_values=  expense_values['Valor.1'].cumsum()
-         #print(idx_expense_values, expense_values)
-         return [idx_expense_values,-expense_values['Valor.1'], -acc_expense_values]
+    def getExpensesOverview(self,df=None, column=None):
+        if column is None:
+            column=self.columns
+        if df is None:
+            df=self.df
+        expense_values = df[df[column['Value']]<0].groupby([column['Date']]).agg("sum")
+        idx_expense_values= expense_values.index
+        acc_expense_values=  expense_values[column['Value']].cumsum()
+        #print(idx_expense_values, expense_values)
+        return [idx_expense_values,-expense_values[column['Value']], -acc_expense_values]
 
-    def getMarginOverview(self,df):
-        margin_values = df.groupby(['Mov']).agg("sum")
+    def getMarginOverview(self,df=None,column=None):
+        if column is None:
+            column=self.columns
+        if df is None:
+            df=self.df
+        margin_values = df.groupby([column['Date']]).agg("sum")
         idx_margin_values = margin_values.index
-        acc_margin_values = margin_values['Valor.1'].cumsum()
+        acc_margin_values = margin_values[column['Value']].cumsum()
 
-        return [idx_margin_values,margin_values['Valor.1'], acc_margin_values]
+        return [idx_margin_values,margin_values[column['Value']], acc_margin_values]
 
-    def getIncomeOverwiew(self,df):
-            income_values = df[df['Valor.1']>0].groupby(['Mov']).agg("sum")
-            idx_income_values  = income_values.index
-            acc_income_values = income_values['Valor.1'].cumsum()
-            
-            return [idx_income_values, income_values['Valor.1'], acc_income_values]
+    def getIncomeOverwiew(self,df=None,column=None):
+        if column is None:
+            column=self.columns
+        if df is None:
+            df=self.df
+        income_values = df[df[column['Value']]>0].groupby([column['Date']]).agg("sum")
+        idx_income_values  = income_values.index
+        acc_income_values = income_values[column['Value']].cumsum()
+        
+        return [idx_income_values, income_values[column['Value']], acc_income_values]
+
+    def getExpensesMonthly(self,df=None,column=None):
+        if column is None:
+            column=self.columns
+        if df is None:
+            df=self.df
+        # Perform the groupby operation and store the result in a variable
+        grouped_expense_by_month = df[df[column['Value']] < 0].groupby([df[column['Date']].dt.year, df[column['Date']].dt.month]).sum()
+        # print(grouped_expense_by_month,grouped_expense_by_month[column['Value']],grouped_expense_by_month.index[0][1])
+
+        ## By month
+        x_grouplist=[]
+        for i in grouped_expense_by_month.index:
+                x_grouplist.append(datetime.datetime.strptime(str(i[0])+'-'+str(i[1]), '%Y-%m'))
+        
+        #print(x_grouplist)
+        sdf=grouped_expense_by_month.reset_index(drop=True) #expenses_by_month
+        sdf[column['Date']]=x_grouplist
+        
+        #print(sdf.head())
+        #print(sdf[column['Date']],sdf[column['Value']])
+
+        return [sdf[column['Date']],sdf[column['Value']]]
+
+    def getIncomeMonthly(self, df=None,column=None):
+        if column is None:
+            column=self.columns
+        if df is None:
+            df=self.df
+        grouped_income_by_month = df[df[column['Value']] > 0].groupby([df[column['Date']].dt.year, df[column['Date']].dt.month]).sum()
+        # print(grouped_expense_by_month,grouped_expense_by_month[column['Value']],grouped_expense_by_month.index[0][1])
+
+        x_grouplist2=[]
+        for i in grouped_income_by_month.index:
+                x_grouplist2.append(datetime.datetime.strptime(str(i[0])+'-'+str(i[1]), '%Y-%m'))
+        #print(x_grouplist)
+        sdf2=grouped_income_by_month.reset_index(drop=True) #expenses_by_month
+        sdf2[column['Date']]=x_grouplist2
+        #print(sdf.head())
+        #print(sdf2[column['Date']],sdf2[column['Value']])
+        
+        return [sdf2[column['Date']],sdf2[column['Value']]]
+
+    def getMarginMonthly(self, df=None, column=None):
+        if column is None:
+            column=self.columns
+        if df is None:
+            df=self.df
+        grouped_by_month = df.groupby([df[column['Date']].dt.year, df[column['Date']].dt.month]).sum()
+        x_grouplist3=[]
+        for i in grouped_by_month.index:
+                x_grouplist3.append(datetime.datetime.strptime(str(i[0])+'-'+str(i[1]), '%Y-%m'))
+        #print(x_grouplist)
+        sdf3=grouped_by_month.reset_index(drop=True) #by_month
+        sdf3[column['Date']]=x_grouplist3
+
+        return [sdf3[column['Date']],sdf3[column['Value']]]
+
+    def getIncomeYear(self, df=None, column=None):
+        if column is None:
+            column=self.columns
+        if df is None:
+            df=self.df
+
+        # Access a specific group by using the .get_group() method on the GroupBy object
+        #group=grouped_expense_by_month.loc[2023]
+
+        # Display the result
+        #print(grouped_expense_by_month.loc[grouped_expense_by_month.index[0]], grouped_expense_by_month.index, group.index,group.loc[group.index[0]]
+
+        expense_by_year= df[df[column['Value']]<0].groupby([df[column['Date']].dt.year]).sum()
+        x = expense_by_year.index
+        y= -expense_by_year[column['Value']]
+        return [x,y]
+
+    def getExpensesYear(self, df=None, column=None):
+        if column is None:
+            column=self.columns
+        if df is None:
+            df=self.df
+        income_by_year= df[df[column['Value']]>0].groupby([df[column['Date']].dt.year]).sum()
+        x2 = income_by_year.index
+        y2=  income_by_year[column['Value']]
+        return [x2,y2] 
 
 
 
@@ -194,25 +322,22 @@ def readPDF(file_dir="~/Downloads/extracto.pdf", debug=False, filter_set_column=
     return df
 
 
-
-
-
-def plotOverviewDF(df,fig,ax,label=False):
+def plotOverviewDF(df,fig,ax,columns={"Balance":"Saldo","Value":"Valor.1", "Date":"Mov", "Info":"Descritivo do Movimento", "Group":"Valor", "Filename":"Filename"},label=False):
         #converter o plot num funcao e fazer pequenas funcoes para criar o dataframe final: sum dia, mes, ano; e filtro com filterDate
-        expense_values = df[df['Valor.1']<0].groupby(['Mov']).agg("sum")
+        expense_values = df[df[columns['Value']]<0].groupby([columns['Date']]).agg("sum")
         x1 = expense_values.index
-        y1 = -expense_values['Valor.1']
-        y3 = -expense_values['Valor.1'].cumsum()
+        y1 = -expense_values[columns['Value']]
+        y3 = -expense_values[columns['Value']].cumsum()
 
-        margin_values = df.groupby(['Mov']).agg("sum")
+        margin_values = df.groupby([columns['Date']]).agg("sum")
         x5= margin_values.index
-        y5= margin_values['Valor.1'].cumsum()
+        y5= margin_values[columns['Value']].cumsum()
 
 
-        income_values = df[df['Valor.1']>0].groupby(['Mov']).agg("sum")
+        income_values = df[df[columns['Value']]>0].groupby([columns['Date']]).agg("sum")
         x2 = income_values.index
-        y2 = income_values['Valor.1']
-        y4 = income_values['Valor.1'].cumsum()
+        y2 = income_values[columns['Value']]
+        y4 = income_values[columns['Value']].cumsum()
 
         # plot
         width = 2
@@ -283,33 +408,7 @@ def plotSimple(expense_values,income_values,fig,ax,label=True):
             ax.bar_label(bar2,rotation=30)
 
 
-def processDirectoryFiles(file_list, read_file_func):
-    df = pandas.DataFrame()
-    count = 0
-    for fdir in list(file_list.keys()):
-        for filename in file_list[fdir]:
-            complete_dir = fdir+'/'+filename
-            s = read_file_func(complete_dir)
-            df = pandas.concat([df, s])
-            count += 1
-    return df, count
 
-def processDataWithCache(file_list, df_cache, parse_func, read_func=readPDF):
-    if df_cache is None or df_cache.empty:  # Check if cache does not exist or is empty
-        dir_file_list = file_list
-    else:
-        cached_file_list = set(df_cache['Filename'].unique())
-        dir_file_list = {key: [item for item in values if item not in cached_file_list] for key, values in file_list.items()}
-
-    # Example usage of the modified processDirectoryFiles function
-    df, count = processDirectoryFiles(dir_file_list, read_file_func=read_func)
-
-    if count:
-        df = parse_func(df)
-        if df_cache is not None and not df_cache.empty:
-            df = pd.concat([df, df_cache])
-
-    return df
 
 
 if __name__ == "__main__":
@@ -388,35 +487,56 @@ if __name__ == "__main__":
     print(processor.getDataMonth(df))
 
 
-    print("\n\n Prepare data for plot \n\n")
+    # print("\n\n Prepare data for plot \n\n")
     
     
-    # Perform the groupby operation and store the result in a variable
-    grouped = df[df['Valor.1'] < 0].groupby([df['Mov'].dt.year, df['Mov'].dt.month]).sum()
-
-    #print(grouped['Valor.1'],grouped.index[0][1])
+    # # Perform the groupby operation and store the result in a variable
+    # grouped_expense_by_month = df[df['Valor.1'] < 0].groupby([df['Mov'].dt.year, df['Mov'].dt.month]).sum()
+    # # print(grouped_expense_by_month,grouped_expense_by_month['Valor.1'],grouped_expense_by_month.index[0][1])
  
-    ## By month
-    x_grouplist=[]
-    for i in grouped.index:
-            x_grouplist.append(datetime.datetime.strptime(str(i[0])+'-'+str(i[1]), '%Y-%m'))
-    print(x_grouplist)
-    sdf=grouped.reset_index(drop=True) #expenses_by_month
-    sdf['Mov']=x_grouplist
-    print(sdf.head())
-    print(sdf['Mov'],sdf['Valor.1'])
+    # ## By month
+    # x_grouplist=[]
+    # for i in grouped_expense_by_month.index:
+    #         x_grouplist.append(datetime.datetime.strptime(str(i[0])+'-'+str(i[1]), '%Y-%m'))
+    # #print(x_grouplist)
+    # sdf=grouped_expense_by_month.reset_index(drop=True) #expenses_by_month
+    # sdf['Mov']=x_grouplist
+    # #print(sdf.head())
+    # print(sdf['Mov'],sdf['Valor.1'])
+
+    # grouped_income_by_month = df[df['Valor.1'] > 0].groupby([df['Mov'].dt.year, df['Mov'].dt.month]).sum()
+    # # print(grouped_expense_by_month,grouped_expense_by_month['Valor.1'],grouped_expense_by_month.index[0][1])
+    
+    # x_grouplist2=[]
+    # for i in grouped_income_by_month.index:
+    #         x_grouplist2.append(datetime.datetime.strptime(str(i[0])+'-'+str(i[1]), '%Y-%m'))
+    # #print(x_grouplist)
+    # sdf2=grouped_income_by_month.reset_index(drop=True) #expenses_by_month
+    # sdf2['Mov']=x_grouplist2
+    # #print(sdf.head())
+    # print(sdf2['Mov'],sdf2['Valor.1'])
+
+    # grouped_by_month = df.groupby([df['Mov'].dt.year, df['Mov'].dt.month]).sum()
+    # x_grouplist3=[]
+    # for i in grouped_by_month.index:
+    #         x_grouplist3.append(datetime.datetime.strptime(str(i[0])+'-'+str(i[1]), '%Y-%m'))
+    # #print(x_grouplist)
+    # sdf3=grouped_by_month.reset_index(drop=True) #by_month
+    # sdf3['Mov']=x_grouplist3
+    
     # Access a specific group by using the .get_group() method on the GroupBy object
-    #group=grouped.loc[2023]
+    #group=grouped_expense_by_month.loc[2023]
+
     # Display the result
-    #print(grouped.loc[grouped.index[0]], grouped.index, group.index,group.loc[group.index[0]]
+    #print(grouped_expense_by_month.loc[grouped_expense_by_month.index[0]], grouped_expense_by_month.index, group.index,group.loc[group.index[0]]
 
-    expense_by_year= df[df['Valor.1']<0].groupby([df['Mov'].dt.year]).sum()
-    x = expense_by_year.index
-    y= -expense_by_year['Valor.1']
+    #expense_by_year= df[df['Valor.1']<0].groupby([df['Mov'].dt.year]).sum()
+    #x = expense_by_year.index
+    #y= -expense_by_year['Valor.1']
 
-    income_by_year= df[df['Valor.1']>0].groupby([df['Mov'].dt.year]).sum()
-    x2 = income_by_year.index
-    y2=  income_by_year['Valor.1']
+    #income_by_year= df[df['Valor.1']>0].groupby([df['Mov'].dt.year]).sum()
+    #x2 = income_by_year.index
+    #y2=  income_by_year['Valor.1']
 
     
     # plot
@@ -428,8 +548,12 @@ if __name__ == "__main__":
     #ax1=fig.add_subplot(222, label="montly Spend")
     #ax1.bar(sdf['Mov'].values,-sdf['Valor.1'])
     
-    plotOverviewDF(df,fig,ax)
-    #plotOverview(getExpensesOverview(df),getIncomeOverwiew(df),getMarginOverview(df),fig,ax)
+    #plotOverviewDF(df,fig,ax)
+    #plotOverview(processor.getExpensesOverview(df),processor.getIncomeOverwiew(df),processor.getMarginOverview(df),fig,ax)
     #plotSimple([x,y],[x2,y2],fig, ax)
+    #plotSimple([sdf['Mov'],-sdf['Valor.1']],[sdf2['Mov'],sdf2['Valor.1']],fig, ax)
+    #line0=ax.plot(sdf3['Mov'],sdf3['Valor.1'],color='k', alpha=0.1)
+    plotSimple([processor.getExpensesMonthly(df)[0],-processor.getExpensesMonthly(df)[1]],processor.getIncomeMonthly(df),fig, ax)
+    line0=ax.stackplot(processor.getMarginMonthly(df)[0],processor.getMarginMonthly(df)[1],color='k', alpha=0.1)
     plt.show()
 
