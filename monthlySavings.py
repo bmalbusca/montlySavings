@@ -5,6 +5,7 @@ import tabula
 import matplotlib.pyplot as plt
 from matplotlib.widgets import SpanSelector
 from sysfiles import str2num, getLocalFiles, collectCacheData
+from plotdata import plotOverview_EI, plotSimple_EI
 
 def processDirectoryFiles(file_list, read_file_func):
     df = pandas.DataFrame()
@@ -280,8 +281,57 @@ class FinancialDataProcessor:
         income_by_year= df[df[column['Value']]>0].groupby([df[column['Date']].dt.year]).sum()
         x2 = income_by_year.index
         y2=  income_by_year[column['Value']]
-        return [x2,y2] 
+        return [x2,y2]
 
+    def getExpensesWeekly(self, df, column=None, filter_year=2023):
+        if column is None:
+            column=self.columns
+
+        # Filter the DataFrame
+        df_filtered = df[df[column['Value']] < 0]
+        df_filtered= df_filtered.drop(columns=column['Balance']) #only drops on df_filtered and not df
+        
+        df_filtered=(df_filtered.groupby([df[column['Date']].dt.year, df[column['Date']].dt.strftime('%U')]).sum())
+        #print(df_filtered.loc[test.index[0]],test.rename_axis(index=["Year", "Week"]).sort_index(level="Week")) # renaing multi-index 
+        t=(df_filtered[df_filtered.index.get_level_values(0).isin([filter_year])].droplevel(0)) #level 0 - Year, level 1 - Week
+        return [t.index.astype(int),t[column['Value']]]
+   
+
+    def plotOverviewDF(self,df,fig,ax,columns=None,label=False):
+        if columns is None:
+            columns=self.columns
+
+        expense_values = df[df[columns['Value']]<0].groupby([columns['Date']]).agg("sum")
+        x1 = expense_values.index
+        y1 = -expense_values[columns['Value']]
+        y3 = -expense_values[columns['Value']].cumsum()
+
+        margin_values = df.groupby([columns['Date']]).agg("sum")
+        x5= margin_values.index
+        y5= margin_values[columns['Value']].cumsum()
+
+
+        income_values = df[df[columns['Value']]>0].groupby([columns['Date']]).agg("sum")
+        x2 = income_values.index
+        y2 = income_values[columns['Value']]
+        y4 = income_values[columns['Value']].cumsum()
+
+        # plot
+        width = 2
+
+        acumulative1=ax.stackplot(x1, y3,alpha=0.2, color='red')
+        acumulative2=ax.stackplot(x2, y4,alpha=0.1, color='green')
+
+        bar1=ax.bar(x1, y1, color='red',width=0.5*width)
+        bar2=ax.bar(x2,y2,color='green',alpha=0.5)
+        line1=ax.plot(x5,y5,color='k', alpha=0.1) 
+        
+        #fig.suptitle('This is a somewhat long figure title', fontsize=16)
+        ax.set(ylabel='Value (€)', xlabel='Time', title='Expenses x Income during time')
+        plt.xticks(rotation=30,ha='right')
+        if label:
+            ax.bar_label(bar1, rotation=30)
+            ax.bar_label(bar2,rotation=30)
 
 
 def readPDF(file_dir="~/Downloads/extracto.pdf", debug=False, filter_set_column={'Mov', 'Valor', 'Descritivo do Movimento','Valor.1' ,'Saldo'}, store_incache=None, cache_name='cached_dataframe.pkl'):
@@ -320,94 +370,6 @@ def readPDF(file_dir="~/Downloads/extracto.pdf", debug=False, filter_set_column=
         store_incache(cache_name)
     
     return df
-
-
-def plotOverviewDF(df,fig,ax,columns={"Balance":"Saldo","Value":"Valor.1", "Date":"Mov", "Info":"Descritivo do Movimento", "Group":"Valor", "Filename":"Filename"},label=False):
-        #converter o plot num funcao e fazer pequenas funcoes para criar o dataframe final: sum dia, mes, ano; e filtro com filterDate
-        expense_values = df[df[columns['Value']]<0].groupby([columns['Date']]).agg("sum")
-        x1 = expense_values.index
-        y1 = -expense_values[columns['Value']]
-        y3 = -expense_values[columns['Value']].cumsum()
-
-        margin_values = df.groupby([columns['Date']]).agg("sum")
-        x5= margin_values.index
-        y5= margin_values[columns['Value']].cumsum()
-
-
-        income_values = df[df[columns['Value']]>0].groupby([columns['Date']]).agg("sum")
-        x2 = income_values.index
-        y2 = income_values[columns['Value']]
-        y4 = income_values[columns['Value']].cumsum()
-
-        # plot
-        width = 2
-
-        acumulative1=ax.stackplot(x1, y3,alpha=0.2, color='red')
-        acumulative2=ax.stackplot(x2, y4,alpha=0.1, color='green')
-
-        bar1=ax.bar(x1, y1, color='red',width=0.5*width)
-        bar2=ax.bar(x2,y2,color='green',alpha=0.5)
-        line1=ax.plot(x5,y5,color='k', alpha=0.1) 
-        
-        #fig.suptitle('This is a somewhat long figure title', fontsize=16)
-        ax.set(ylabel='Value (€)', xlabel='Time', title='Expenses x Income during time')
-        plt.xticks(rotation=30,ha='right')
-        if label:
-            ax.bar_label(bar1, rotation=30)
-            ax.bar_label(bar2,rotation=30)
-
-
-def plotOverview(expense_values,income_values,margin_values, fig,ax,label=True,accumulative=False):
-
-        x1 = expense_values[0]
-        y1 = expense_values[1]
-
-        x2 = income_values[0]
-        y2 = income_values[1]
-
-        if(accumulative):
-            y3 = expense_values[2]
-            y4 = income_values[2]
-            x5= margin_values[0]
-            y5= margin_values[2]
-
-            line0=ax.plot(x5,y5,color='k', alpha=0.1)
-            acumulative1=ax.stackplot(x1, y3,alpha=0.2, color='red')
-            acumulative2=ax.stackplot(x2, y4,alpha=0.1, color='green')
-
-        # plot
-        width = 2
-        bar1=ax.bar(x1, y1, color='red',width=0.5*width)
-        bar2=ax.bar(x2,y2,color='green',alpha=0.5)
-        
-        #fig.suptitle('This is a somewhat long figure title', fontsize=16)
-        ax.set(ylabel='Value (€)', xlabel='Time', title='Expenses x Income during time')
-        plt.xticks(rotation=30,ha='right')
-        if label:
-            ax.bar_label(bar1, rotation=30)
-            ax.bar_label(bar2,rotation=30)
-  
-def plotSimple(expense_values,income_values,fig,ax,label=True):
-
-        x1 = expense_values[0]
-        y1 = expense_values[1]
-
-        x2 = income_values[0]
-        y2 = income_values[1]
-
-             # plot
-        width = 2
-        bar1=ax.bar(x1, y1, color='red',width=0.5*width)
-        bar2=ax.bar(x2,y2,color='green',alpha=0.5)
-        
-        #fig.suptitle('This is a somewhat long figure title', fontsize=16)
-        ax.set(ylabel='Value (€)', xlabel='Time', title='Expenses x Income during time')
-        plt.xticks(rotation=30,ha='right')
-        if label:
-            ax.bar_label(bar1, rotation=30)
-            ax.bar_label(bar2,rotation=30)
-
-
 
 
 
@@ -487,57 +449,8 @@ if __name__ == "__main__":
     print(processor.getDataMonth(df))
 
 
-    # print("\n\n Prepare data for plot \n\n")
-    
-    
-    # # Perform the groupby operation and store the result in a variable
-    # grouped_expense_by_month = df[df['Valor.1'] < 0].groupby([df['Mov'].dt.year, df['Mov'].dt.month]).sum()
-    # # print(grouped_expense_by_month,grouped_expense_by_month['Valor.1'],grouped_expense_by_month.index[0][1])
- 
-    # ## By month
-    # x_grouplist=[]
-    # for i in grouped_expense_by_month.index:
-    #         x_grouplist.append(datetime.datetime.strptime(str(i[0])+'-'+str(i[1]), '%Y-%m'))
-    # #print(x_grouplist)
-    # sdf=grouped_expense_by_month.reset_index(drop=True) #expenses_by_month
-    # sdf['Mov']=x_grouplist
-    # #print(sdf.head())
-    # print(sdf['Mov'],sdf['Valor.1'])
-
-    # grouped_income_by_month = df[df['Valor.1'] > 0].groupby([df['Mov'].dt.year, df['Mov'].dt.month]).sum()
-    # # print(grouped_expense_by_month,grouped_expense_by_month['Valor.1'],grouped_expense_by_month.index[0][1])
-    
-    # x_grouplist2=[]
-    # for i in grouped_income_by_month.index:
-    #         x_grouplist2.append(datetime.datetime.strptime(str(i[0])+'-'+str(i[1]), '%Y-%m'))
-    # #print(x_grouplist)
-    # sdf2=grouped_income_by_month.reset_index(drop=True) #expenses_by_month
-    # sdf2['Mov']=x_grouplist2
-    # #print(sdf.head())
-    # print(sdf2['Mov'],sdf2['Valor.1'])
-
-    # grouped_by_month = df.groupby([df['Mov'].dt.year, df['Mov'].dt.month]).sum()
-    # x_grouplist3=[]
-    # for i in grouped_by_month.index:
-    #         x_grouplist3.append(datetime.datetime.strptime(str(i[0])+'-'+str(i[1]), '%Y-%m'))
-    # #print(x_grouplist)
-    # sdf3=grouped_by_month.reset_index(drop=True) #by_month
-    # sdf3['Mov']=x_grouplist3
-    
-    # Access a specific group by using the .get_group() method on the GroupBy object
-    #group=grouped_expense_by_month.loc[2023]
-
-    # Display the result
-    #print(grouped_expense_by_month.loc[grouped_expense_by_month.index[0]], grouped_expense_by_month.index, group.index,group.loc[group.index[0]]
-
-    #expense_by_year= df[df['Valor.1']<0].groupby([df['Mov'].dt.year]).sum()
-    #x = expense_by_year.index
-    #y= -expense_by_year['Valor.1']
-
-    #income_by_year= df[df['Valor.1']>0].groupby([df['Mov'].dt.year]).sum()
-    #x2 = income_by_year.index
-    #y2=  income_by_year['Valor.1']
-
+    print("\n\n Prepare data for plot \n\n")
+  
     
     # plot
     fig=plt.figure()
@@ -547,13 +460,18 @@ if __name__ == "__main__":
     #ax2.stem(x,y)
     #ax1=fig.add_subplot(222, label="montly Spend")
     #ax1.bar(sdf['Mov'].values,-sdf['Valor.1'])
+    #ax.bar(t.index.astype(int),t['Valor.1'])
+    data= processor.getExpensesWeekly(df)
+    ax.bar(data[0],data[1])
+  
     
-    #plotOverviewDF(df,fig,ax)
-    #plotOverview(processor.getExpensesOverview(df),processor.getIncomeOverwiew(df),processor.getMarginOverview(df),fig,ax)
-    #plotSimple([x,y],[x2,y2],fig, ax)
-    #plotSimple([sdf['Mov'],-sdf['Valor.1']],[sdf2['Mov'],sdf2['Valor.1']],fig, ax)
+    #processor.plotOverviewDF(df,fig,ax)
+    #plotOverview_EI(processor.getExpensesOverview(df),processor.getIncomeOverwiew(df),processor.getMarginOverview(df),fig,ax)
+    #plotSimple_EI([x,y],[x2,y2],fig, ax)
+    #plotSimple_EI([sdf['Mov'],-sdf['Valor.1']],[sdf2['Mov'],sdf2['Valor.1']],fig, ax)
     #line0=ax.plot(sdf3['Mov'],sdf3['Valor.1'],color='k', alpha=0.1)
-    plotSimple([processor.getExpensesMonthly(df)[0],-processor.getExpensesMonthly(df)[1]],processor.getIncomeMonthly(df),fig, ax)
-    line0=ax.stackplot(processor.getMarginMonthly(df)[0],processor.getMarginMonthly(df)[1],color='k', alpha=0.1)
+    #plotSimple_EI([processor.getExpensesMonthly(df)[0],-processor.getExpensesMonthly(df)[1]],processor.getIncomeMonthly(df),fig, ax)
+    #line0=ax.stackplot(processor.getMarginMonthly(df)[0],processor.getMarginMonthly(df)[1],color='k', alpha=0.1)
+
     plt.show()
 
