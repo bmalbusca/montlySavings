@@ -34,6 +34,43 @@ def parseDataframe(df, columns={"Balance":"Saldo","Value":"Valor.1", "Date":"Mov
 
     return df
 
+def readPDF(file_dir="~/Downloads/extracto.pdf", debug=False, filter_set_column={'Mov', 'Valor', 'Descritivo do Movimento','Valor.1' ,'Saldo'}, store_incache=None, cache_name='cached_dataframe.pkl'):
+
+    tables = tabula.read_pdf(file_dir, pages="all")
+
+    if debug:
+        print(tables)
+
+    filtered_tables=[]
+    for table in tables:
+        if filter_set_column.issubset(table.columns):
+                filtered_tables.append(table)
+    
+    #change this for future; manual find out is not the correct way, maybe should pass as function or each for each version known
+    #year= tables[-2]['Valor'][0].split('-')[0]
+    year='2023'
+    df=filtered_tables[0].copy()
+
+    if debug:
+        print(len(filtered_tables[0]), len(filtered_tables[1]),len(filtered_tables[0])+ len(filtered_tables[1]) )
+    
+    for i in range(len(filtered_tables)-1):
+        if debug:
+            print("table[",i,"]")
+        if list(filtered_tables[0].columns) == list(filtered_tables[i+1].columns):
+            df=pandas.concat([df, filtered_tables[i+1]], ignore_index = True)
+    df['Filename']=file_dir
+    if debug:
+        print(len(filtered_tables[0]),len(df))
+        print(df)
+    df['Valor']=year
+    # Store your DataFrame
+    if store_incache is not None:
+        #df.to_pickle('cached_dataframe.pkl') # will be stored in current directory store_incache->df.to_pickle
+        store_incache(cache_name)
+    
+    return df
+
 def existsNaNDataframe(df, column='Saldo'):
     print("Nan Values:",df[column].isnull().values.any()) #There is nan
     print("Nan Values Indexes:",list(df.loc[pandas.isna(df[column]), :].index)) #return the indexes
@@ -57,6 +94,87 @@ class FinancialDataProcessor:
     def __init__(self, input_df=None):
         self.df = None
         self.columns = {"Balance":"Saldo","Value":"Valor.1", "Date":"Mov", "Info":"Descritivo do Movimento", "Group":"Valor", "Filename":"Filename"}
+        self.categories = [
+    {'label': 'Housing', 'value': 0, 'sub': [
+        {'label': 'Mortgage/Rent', 'value': 0},
+        {'label': 'House Insurance', 'value': 0},
+        {'label': 'Repairs', 'value': 0},
+        {'label': 'Utilities', 'value': 0, 'sub': [
+            {'label': 'Telcom', 'value': 0},
+            {'label': 'Electricity', 'value': 0},
+            {'label': 'Water', 'value': 0},
+            {'label': 'Gas', 'value': 0}
+        ]}
+    ]},
+    {'label': 'Transport', 'value': 0, 'sub': [
+        {'label': 'Car Loan', 'value': 0},
+        {'label': 'Car Insurance', 'value': 0},
+        {'label': 'Public Transport', 'value': 0, 'sub': [
+            {'label': 'Train', 'value': 0},
+            {'label': 'Metro', 'value': 0},
+            {'label': 'Bus', 'value': 0}
+        ]},
+        {'label': 'Maintenance', 'value': 0},
+        {'label': 'Fuel', 'value': 0},
+        {'label': 'Flight', 'value': 0}
+    ]},
+    {'label': 'Food', 'value': 0, 'sub': [
+        {'label': 'Groceries', 'value': 0, 'sub': [
+            {'label': 'Super Market', 'value': 0},
+            {'label': 'Local Market', 'value': 0}
+        ]},
+        {'label': 'Take Away', 'value': 0}
+    ]},
+    {'label': 'Health', 'value': 0, 'sub': [
+        {'label': 'Doctor Visits', 'value': 0},
+        {'label': 'Medications', 'value': 0},
+        {'label': 'Supplements', 'value': 0},
+        {'label': 'Health Exams', 'value': 0},
+        {'label': 'Dentist', 'value': 0},
+        {'label': 'Treatments', 'value': 0},
+        {'label': 'Health Insurance', 'value': 0},
+        {'label': 'Life Insurance', 'value': 0}
+    ]},
+    {'label': 'Personal Care', 'value': 0, 'sub': [
+        {'label': 'Gym', 'value': 0},
+        {'label': 'Haircut', 'value': 0},
+        {'label': 'Toiletries', 'value': 0},
+        {'label': 'SPA', 'value': 0}
+    ]},
+    {'label': 'Education', 'value': 0, 'sub': [
+        {'label': 'Tuition Fees', 'value': 0},
+        {'label': 'Learning Materials', 'value': 0},
+        {'label': 'School Fees', 'value': 0},
+        {'label': 'Childcare', 'value': 0}
+    ]},
+    {'label': 'Leisure', 'value': 0, 'sub': [
+        {'label': 'Cinema', 'value': 0},
+        {'label': 'Theater/Concert', 'value': 0},
+        {'label': 'Festivals', 'value': 0},
+        {'label': 'Cafe', 'value': 0},
+        {'label': 'Restaurant', 'value': 0},
+        {'label': 'Books', 'value': 0},
+        {'label': 'Hobbies', 'value': 0},
+        {'label': 'Streaming Services', 'value': 0},
+        {'label': 'Bars', 'value': 0},
+        {'label': 'Hotels', 'value': 0},
+        {'label': 'Subscriptions', 'value': 0},
+        {'label': 'Trip Experiences', 'value': 0}
+    ]},
+    {'label': 'Shopping', 'value': 0, 'sub': [
+        {'label': 'Clothing', 'value': 0},
+        {'label': 'Shoes', 'value': 0},
+        {'label': 'Accessories', 'value': 0},
+        {'label': 'Gifts', 'value': 0}
+    ]},
+    {'label': 'Savings', 'value': 0, 'sub': [
+        {'label': 'Emergency Fund', 'value': 0},
+        {'label': 'Retirement', 'value': 0},
+        {'label': 'Term Deposits', 'value': 0}
+    ]}
+    ]
+        self.labels= {} # Example {'Transaction Name': 'Shopping''}
+
         if input_df is not None:
             self.df = ParseNewData(input_df, parseDataframe)
      
@@ -73,6 +191,8 @@ class FinancialDataProcessor:
         
         if debug:
             print("\n\n after parsing_func ParseNewData call:\n", df.to_string())
+
+        self.df = df
 
         return df
 
@@ -334,44 +454,106 @@ class FinancialDataProcessor:
             ax.bar_label(bar2,rotation=30)
 
 
-def readPDF(file_dir="~/Downloads/extracto.pdf", debug=False, filter_set_column={'Mov', 'Valor', 'Descritivo do Movimento','Valor.1' ,'Saldo'}, store_incache=None, cache_name='cached_dataframe.pkl'):
 
-    tables = tabula.read_pdf(file_dir, pages="all")
-
-    if debug:
-        print(tables)
-
-    filtered_tables=[]
-    for table in tables:
-        if filter_set_column.issubset(table.columns):
-                filtered_tables.append(table)
+def levenshtein_distance(str1, str2):
+    m, n = len(str1), len(str2)
     
-    #change this for future; manual find out is not the correct way, maybe should pass as function or each for each version known
-    #year= tables[-2]['Valor'][0].split('-')[0]
-    year='2023'
-    df=filtered_tables[0].copy()
-
-    if debug:
-        print(len(filtered_tables[0]), len(filtered_tables[1]),len(filtered_tables[0])+ len(filtered_tables[1]) )
+    # Initialize the matrix
+    matrix = [[0] * (n + 1) for _ in range(m + 1)]
     
-    for i in range(len(filtered_tables)-1):
-        if debug:
-            print("table[",i,"]")
-        if list(filtered_tables[0].columns) == list(filtered_tables[i+1].columns):
-            df=pandas.concat([df, filtered_tables[i+1]], ignore_index = True)
-    df['Filename']=file_dir
-    if debug:
-        print(len(filtered_tables[0]),len(df))
-        print(df)
-    df['Valor']=year
-    # Store your DataFrame
-    if store_incache is not None:
-        #df.to_pickle('cached_dataframe.pkl') # will be stored in current directory store_incache->df.to_pickle
-        store_incache(cache_name)
+    # Fill in the first row and first column
+    for i in range(m + 1):
+        matrix[i][0] = i
+    for j in range(n + 1):
+        matrix[0][j] = j
     
-    return df
+    # Fill in the rest of the matrix
+    for i in range(1, m + 1):
+        for j in range(1, n + 1):
+            cost = 0 if str1[i - 1] == str2[j - 1] else 1
+            matrix[i][j] = min(matrix[i - 1][j] + 1,      # Deletion
+                              matrix[i][j - 1] + 1,      # Insertion
+                              matrix[i - 1][j - 1] + cost)  # Substitution
+    
+    # The Levenshtein distance is the value in the bottom-right cell
+    return matrix[m][n]
 
 
+def create_transfer_types_data (unique_labels:dict):
+    # Dictionary to store information about transfer types
+    transfer_types_data = {}
+
+    # Iterate through unique labels to create a dictionary with transfer types and their corresponding details
+    for label in unique_labels:
+        words = label.split(" ")  # Split the label into words
+        word_count = len(words)
+        
+        # Depending on the number of words in the label, create a nested structure in the dictionary
+        if word_count > 2:
+            try:
+                transfer_types_data[str(words[0]) + str(words[1])].append(words[2:])
+            except KeyError:
+                transfer_types_data[str(words[0]) + str(words[1])] = [words[2:]]
+            except Exception as e:
+                print(f"An unexpected error occurred: {e}")
+
+    return transfer_types_data
+
+def get_similiar_transfer_types(transfer_types_data: dict, levenshtein_distance):
+    # Extract keys from the dictionary
+    transfer_type_keys = list(transfer_types_data.keys())  
+    number_of_keys = len(transfer_type_keys)
+    guess_dict = {}
+
+    # Iterate through the keys to find similar transfer types using Levenshtein distance
+    for i in range(number_of_keys - 1):
+        for j in range(i + 1, number_of_keys - 1):
+            key_i, key_j = transfer_type_keys[i], transfer_type_keys[j]
+            distance = levenshtein_distance(key_i, key_j)
+
+            # Check if Levenshtein distance is less than 3
+            if distance < 3:
+                transfer_labels_i, transfer_labels_j = transfer_types_data[key_i], transfer_types_data[key_j]
+
+                # Iterate through the transfer labels of the current keys
+                for transfer_label_i in transfer_labels_i:
+                    for transfer_label_j in transfer_labels_j:
+                        # Compare details of transfer types
+                        if transfer_label_i[0] == transfer_label_j[0]:
+                            fullstring = f"{key_i} {' '.join(transfer_label_j)}"
+                            fullstring2 = f"{key_j} {' '.join(transfer_label_i)}"
+
+                            # Update guess_dict
+                            try:
+                                guess_dict.setdefault(fullstring2, []).append(fullstring)
+                            except Exception as e:
+                                print(f"An unexpected error occurred: {e}")
+    return guess_dict
+
+def convert_inner_lists_of_list_to_strings(transfer_types_data):
+    """Convert inner arrays to single strings in the original dictionary."""
+    for key, value in transfer_types_data.items():
+        converted_values = [' '.join(inner_array) for inner_array in value]
+        transfer_types_data[key] = converted_values
+
+def checkUniqueFilesInCache(df_cache, file_list):
+    if isinstance(df_cache, type(None)) == False: #does not existe data
+
+        cached_file_list= df_cache['Filename'].unique()
+
+        filtered_file=[]
+        dir_file_list={}
+        for keys in file_list:
+            for cached_filename in cached_file_list:
+                if cached_filename.split("/")[-1] not in file_list[keys]:
+                    print(cached_filename.split("/")[-1]," is a new file to explore\n")
+                    filtered_file.append(file_list[keys])
+
+            dir_file_list[keys]=filtered_file
+    else:
+        print("line 352-Alert: Does not exists stored data (cache)\n")
+        dir_file_list =file_list
+    return dir_file_list
 
 if __name__ == "__main__":
     read_cache = None
@@ -379,63 +561,45 @@ if __name__ == "__main__":
     debug=False
     processor =FinancialDataProcessor()
 
-    
+    ## add  the files processing to larger fucntion; the ideia is  having multiple ways to get data, inclusive from a API    
     df_cache=collectCacheData(debug=False,collect_cache_func=pandas.read_pickle, bool_assert_cache_func=(lambda dataframe: dataframe.empty))
     file_list =getLocalFiles()
-    #print("getLocalFiles() result:")
-    #print(file_list)
-    #print("\n")
-    #print("Cached data \n", "line 322-is none?",(isinstance(df_cache, type(None)) == False),'\n', df_cache)
 
-    if isinstance(df_cache, type(None)) == False: #does not existe data
+    # checkUniqueFiles()
+    # if isinstance(df_cache, type(None)) == False: #does not existe data
 
-        #print("Cached_file_list from df unique:")
-        cached_file_list= df_cache['Filename'].unique()
-        #print(cached_file_list)
-        #print("\n")
+    #     cached_file_list= df_cache['Filename'].unique()
 
-        filtered_file=[]
-        dir_file_list={}
-        for keys in file_list:
-            for cached_filename in cached_file_list:
-                #print("is in this cached list?", file_list[keys],"\n")
-                #print("last stripped",cached_filename, cached_filename.split('/'),"\n") 
-                if cached_filename.split("/")[-1] not in file_list[keys]:
-                    print(cached_filename.split("/")[-1]," is a new file to explore\n")
-                    filtered_file.append(file_list[keys])
+    #     filtered_file=[]
+    #     dir_file_list={}
+    #     for keys in file_list:
+    #         for cached_filename in cached_file_list:
+    #             if cached_filename.split("/")[-1] not in file_list[keys]:
+    #                 print(cached_filename.split("/")[-1]," is a new file to explore\n")
+    #                 filtered_file.append(file_list[keys])
 
-            dir_file_list[keys]=filtered_file
-            #print("final dict to pass", dir_file_list)
+    #         dir_file_list[keys]=filtered_file
+    # else:
+    #     print("line 352-Alert: Does not exists stored data (cache)\n")
+    #     dir_file_list =file_list
 
-        #dir_file_list = {key: [item for item in values if item not in set(cached_file_list)] for key, values in file_list.items()}
-        #print("other files exist")
-    else:
-        print("line 352-Alert: Does not exists stored data (cache)\n")
-        dir_file_list =file_list
+    dir_file_list = checkUniqueFilesInCache(df_cache, file_list)
     
     print(dir_file_list)
     # Example usage of the modified processDirectoryFiles function
+    ## ProcessData()
     df, count = processDirectoryFiles(dir_file_list, read_file_func=readPDF)
 
-    #print("after processDirectoryFiles()", df, count, "\n")
-
+    ## processor should only have store method and not passing store_incache; need to be adaptable to store both in cloud and cache
     if count:
-        #print("there is a count", count, "\n")
         df = processor.ParseNewData(df,parsing_func=parseDataframe,store_incache= df.to_pickle)
-        #print("new data parsed", df, "\n")
    
     if isinstance(df_cache, type(None)) == False:
-        #print("yes, df_cache is not empty \n")
         df = pandas.concat([df,df_cache])
-        
-        #print("final df with already exisiting data", df.to_string)
         df = processor.ParseNewData(df,parsing_func=parseDataframe,store_incache= df.to_pickle)
-    else:
-        if  not(count):
-            print("line-369 No Data Available.")
-            sys.exit(0)
-
-
+    elif not(count):
+        print("line-369 No Data Available.")
+        sys.exit(0)
 
     print(processor.balanceAmount(df))
     print("processor.expensesAnalytics(df)")
@@ -447,6 +611,20 @@ if __name__ == "__main__":
 
     print("Months Available: processor.getDataMonth(df) \n")
     print(processor.getDataMonth(df))
+
+
+    # Extract unique values from the "Descritivo do Movimento" column in the DataFrame
+    unique_labels = df["Descritivo do Movimento"].unique()
+    transfer_types_data = create_transfer_types_data(unique_labels)
+    guess_dict = get_similiar_transfer_types(transfer_types_data, levenshtein_distance)
+    
+
+    # Update the original dictionary to have inner arrays converted to single strings
+    # convert_inner_lists_of_list_to_strings(transfer_types_data)
+
+    # Print the result
+    print("These movements are the same category? \n\n", guess_dict, "\n\n", unique_labels,"\n\n")
+    # now, create a pandas dataframe where column "Descritivo do Movimento" is unique_labels, column "label" will be the category; Then  or each unique_label that is a key on guess_dict should have the same label that are the key value of that key 
 
 
     print("\n\n Prepare data for plot \n\n")
@@ -462,10 +640,10 @@ if __name__ == "__main__":
     #ax1.bar(sdf['Mov'].values,-sdf['Valor.1'])
     #ax.bar(t.index.astype(int),t['Valor.1'])
     data= processor.getExpensesWeekly(df)
-    ax.bar(data[0],data[1])
+    #ax.bar(data[0],data[1])
   
     
-    #processor.plotOverviewDF(df,fig,ax)
+    processor.plotOverviewDF(df,fig,ax)
     #plotOverview_EI(processor.getExpensesOverview(df),processor.getIncomeOverwiew(df),processor.getMarginOverview(df),fig,ax)
     #plotSimple_EI([x,y],[x2,y2],fig, ax)
     #plotSimple_EI([sdf['Mov'],-sdf['Valor.1']],[sdf2['Mov'],sdf2['Valor.1']],fig, ax)
