@@ -178,7 +178,7 @@ class FinancialDataProcessor:
         if input_df is not None:
             self.df = ParseNewData(input_df, parseDataframe)
      
-    def ParseNewData(self, df, parsing_func, store_incache=None, cache_name='cached_dataframe.pkl', debug=False):
+    def ParseNewData(self, df, parsing_func=parseDataframe, store_incache=None, cache_name='cached_dataframe.pkl', debug=False):
         # Call the parsing function
         df = parsing_func(df,self.columns)
 
@@ -555,52 +555,37 @@ def checkUniqueFilesInCache(df_cache, file_list):
         dir_file_list =file_list
     return dir_file_list
 
+def getLocalStoreDataFrame():
+    read_cache = None
+    df=None
+    debug=False
+    ## add  the files processing to larger fucntion; the ideia is  having multiple ways to get data, inclusive from a API    
+    df_cache=collectCacheData(debug=False,collect_cache_func=pandas.read_pickle, bool_assert_cache_func=(lambda dataframe: dataframe.empty))
+    file_list =getLocalFiles()
+
+    dir_file_list = checkUniqueFilesInCache(df_cache, file_list)
+
+    df, count = processDirectoryFiles(dir_file_list, read_file_func=readPDF)
+
+    if isinstance(df_cache, type(None)) == False:
+        df = pandas.concat([df,df_cache])
+    elif not(count):
+        print("line-369 No Data Available.")
+        sys.exit(0)
+
+    return df, count
+
 if __name__ == "__main__":
     read_cache = None
     df=None
     debug=False
     processor =FinancialDataProcessor()
-
-    ## add  the files processing to larger fucntion; the ideia is  having multiple ways to get data, inclusive from a API    
-    df_cache=collectCacheData(debug=False,collect_cache_func=pandas.read_pickle, bool_assert_cache_func=(lambda dataframe: dataframe.empty))
-    file_list =getLocalFiles()
-
-    # checkUniqueFiles()
-    # if isinstance(df_cache, type(None)) == False: #does not existe data
-
-    #     cached_file_list= df_cache['Filename'].unique()
-
-    #     filtered_file=[]
-    #     dir_file_list={}
-    #     for keys in file_list:
-    #         for cached_filename in cached_file_list:
-    #             if cached_filename.split("/")[-1] not in file_list[keys]:
-    #                 print(cached_filename.split("/")[-1]," is a new file to explore\n")
-    #                 filtered_file.append(file_list[keys])
-
-    #         dir_file_list[keys]=filtered_file
-    # else:
-    #     print("line 352-Alert: Does not exists stored data (cache)\n")
-    #     dir_file_list =file_list
-
-    dir_file_list = checkUniqueFilesInCache(df_cache, file_list)
-    
-    print(dir_file_list)
-    # Example usage of the modified processDirectoryFiles function
-    ## ProcessData()
-    df, count = processDirectoryFiles(dir_file_list, read_file_func=readPDF)
+    df, count = getLocalStoreDataFrame()
 
     ## processor should only have store method and not passing store_incache; need to be adaptable to store both in cloud and cache
-    if count:
-        df = processor.ParseNewData(df,parsing_func=parseDataframe,store_incache= df.to_pickle)
+    df = processor.ParseNewData(df,store_incache= df.to_pickle)
    
-    if isinstance(df_cache, type(None)) == False:
-        df = pandas.concat([df,df_cache])
-        df = processor.ParseNewData(df,parsing_func=parseDataframe,store_incache= df.to_pickle)
-    elif not(count):
-        print("line-369 No Data Available.")
-        sys.exit(0)
-
+   
     print(processor.balanceAmount(df))
     print("processor.expensesAnalytics(df)")
     print(processor.expensesAnalytics(df))
@@ -643,13 +628,13 @@ if __name__ == "__main__":
     #ax.bar(data[0],data[1])
   
     
-    processor.plotOverviewDF(df,fig,ax)
+    #processor.plotOverviewDF(df,fig,ax)
     #plotOverview_EI(processor.getExpensesOverview(df),processor.getIncomeOverwiew(df),processor.getMarginOverview(df),fig,ax)
     #plotSimple_EI([x,y],[x2,y2],fig, ax)
     #plotSimple_EI([sdf['Mov'],-sdf['Valor.1']],[sdf2['Mov'],sdf2['Valor.1']],fig, ax)
     #line0=ax.plot(sdf3['Mov'],sdf3['Valor.1'],color='k', alpha=0.1)
-    #plotSimple_EI([processor.getExpensesMonthly(df)[0],-processor.getExpensesMonthly(df)[1]],processor.getIncomeMonthly(df),fig, ax)
-    #line0=ax.stackplot(processor.getMarginMonthly(df)[0],processor.getMarginMonthly(df)[1],color='k', alpha=0.1)
+    plotSimple_EI([processor.getExpensesMonthly(df)[0],-processor.getExpensesMonthly(df)[1]],processor.getIncomeMonthly(df),fig, ax)
+    line0=ax.stackplot(processor.getMarginMonthly(df)[0],processor.getMarginMonthly(df)[1],color='k', alpha=0.1)
 
     plt.show()
 
