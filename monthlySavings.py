@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 from matplotlib.widgets import SpanSelector
 from sysfiles import str2num, getLocalFiles, collectCacheData
 from plotdata import plotOverview_EI, plotSimple_EI
+from categories import categories_hierarchy
+import pdb; 
 
 def processDirectoryFiles(file_list, read_file_func):
     df = pandas.DataFrame()
@@ -20,6 +22,7 @@ def processDirectoryFiles(file_list, read_file_func):
 
 
 def parseDataframe(df, columns={"Balance":"Saldo","Value":"Valor.1", "Date":"Mov", "Info":"Descritivo do Movimento", "Group":"Valor", "Filename":"Filename"}):
+    print("At parseDataframe", df )
     try:
         # Drop rows with NaN in 'Saldo' and 'Valor.1' columns
         df = df.dropna(subset=[columns["Balance"], columns["Value"]]).reset_index(drop=True)
@@ -27,10 +30,14 @@ def parseDataframe(df, columns={"Balance":"Saldo","Value":"Valor.1", "Date":"Mov
         df[[columns["Balance"], columns["Value"]]] = df[[columns["Balance"], columns["Value"]]].applymap(str2num)
         # Combine 'Mov' with the predefined year and convert to datetime
         df[columns["Date"]] = pandas.to_datetime(df[columns["Date"]].astype(str) + '-2023', errors='coerce', format='%d-%m-%Y')
+        #df[columns["Date"]] = pandas.to_datetime(df[columns["Date"]].astype(str) + '-2023', errors='coerce',format='%Y-%m-%d')
         # Drop duplicates, sort by 'Mov', and reset index
         df = df.drop_duplicates().sort_values(by=columns["Date"]).reset_index(drop=True)
     except:
         df=None
+        print( " Failed to parse at parseDataframe() \n\n" )
+    
+    print("After parseDataframe", df )
 
     return df
 
@@ -89,105 +96,66 @@ def filterDate(df, start, end_date=False,column='Mov', debug=False):
     
     return df[mask]
 
+def StoreInCache(df, cache_name):
+    print("Entered on StoreInCache with df:",df.head(5).to_string(), "\n\n" )
+    if isinstance(df, pandas.DataFrame):
+        df.to_pickle(cache_name)
 
+#example for PDF files the df_columns = {"Balance":"Saldo","Value":"Valor.1", "Date":"Mov", "Info":"Descritivo do Movimento", "Group":"Valor", "Filename":"Filename"}
 class FinancialDataProcessor:
-    def __init__(self, input_df=None):
+    def __init__(self, df_columns, input_df=None, _put_store_data=None, _get_store_data=None, _data_processor=parseDataframe):
         self.df = None
-        self.columns = {"Balance":"Saldo","Value":"Valor.1", "Date":"Mov", "Info":"Descritivo do Movimento", "Group":"Valor", "Filename":"Filename"}
-        self.categories = [
-    {'label': 'Housing', 'value': 0, 'sub': [
-        {'label': 'Mortgage/Rent', 'value': 0},
-        {'label': 'House Insurance', 'value': 0},
-        {'label': 'Repairs', 'value': 0},
-        {'label': 'Utilities', 'value': 0, 'sub': [
-            {'label': 'Telcom', 'value': 0},
-            {'label': 'Electricity', 'value': 0},
-            {'label': 'Water', 'value': 0},
-            {'label': 'Gas', 'value': 0}
-        ]}
-    ]},
-    {'label': 'Transport', 'value': 0, 'sub': [
-        {'label': 'Car Loan', 'value': 0},
-        {'label': 'Car Insurance', 'value': 0},
-        {'label': 'Public Transport', 'value': 0, 'sub': [
-            {'label': 'Train', 'value': 0},
-            {'label': 'Metro', 'value': 0},
-            {'label': 'Bus', 'value': 0}
-        ]},
-        {'label': 'Maintenance', 'value': 0},
-        {'label': 'Fuel', 'value': 0},
-        {'label': 'Flight', 'value': 0}
-    ]},
-    {'label': 'Food', 'value': 0, 'sub': [
-        {'label': 'Groceries', 'value': 0, 'sub': [
-            {'label': 'Super Market', 'value': 0},
-            {'label': 'Local Market', 'value': 0}
-        ]},
-        {'label': 'Take Away', 'value': 0}
-    ]},
-    {'label': 'Health', 'value': 0, 'sub': [
-        {'label': 'Doctor Visits', 'value': 0},
-        {'label': 'Medications', 'value': 0},
-        {'label': 'Supplements', 'value': 0},
-        {'label': 'Health Exams', 'value': 0},
-        {'label': 'Dentist', 'value': 0},
-        {'label': 'Treatments', 'value': 0},
-        {'label': 'Health Insurance', 'value': 0},
-        {'label': 'Life Insurance', 'value': 0}
-    ]},
-    {'label': 'Personal Care', 'value': 0, 'sub': [
-        {'label': 'Gym', 'value': 0},
-        {'label': 'Haircut', 'value': 0},
-        {'label': 'Toiletries', 'value': 0},
-        {'label': 'SPA', 'value': 0}
-    ]},
-    {'label': 'Education', 'value': 0, 'sub': [
-        {'label': 'Tuition Fees', 'value': 0},
-        {'label': 'Learning Materials', 'value': 0},
-        {'label': 'School Fees', 'value': 0},
-        {'label': 'Childcare', 'value': 0}
-    ]},
-    {'label': 'Leisure', 'value': 0, 'sub': [
-        {'label': 'Cinema', 'value': 0},
-        {'label': 'Theater/Concert', 'value': 0},
-        {'label': 'Festivals', 'value': 0},
-        {'label': 'Cafe', 'value': 0},
-        {'label': 'Restaurant', 'value': 0},
-        {'label': 'Books', 'value': 0},
-        {'label': 'Hobbies', 'value': 0},
-        {'label': 'Streaming Services', 'value': 0},
-        {'label': 'Bars', 'value': 0},
-        {'label': 'Hotels', 'value': 0},
-        {'label': 'Subscriptions', 'value': 0},
-        {'label': 'Trip Experiences', 'value': 0}
-    ]},
-    {'label': 'Shopping', 'value': 0, 'sub': [
-        {'label': 'Clothing', 'value': 0},
-        {'label': 'Shoes', 'value': 0},
-        {'label': 'Accessories', 'value': 0},
-        {'label': 'Gifts', 'value': 0}
-    ]},
-    {'label': 'Savings', 'value': 0, 'sub': [
-        {'label': 'Emergency Fund', 'value': 0},
-        {'label': 'Retirement', 'value': 0},
-        {'label': 'Term Deposits', 'value': 0}
-    ]}
-    ]
+        self.columns = df_columns
+        self.categories = categories_hierarchy
         self.labels= {} # Example {'Transaction Name': 'Shopping''}
+        self.put_store_data= _put_store_data
+        self.get_store_data = _get_store_data
+        self.data_processor = _data_processor
 
         if input_df is not None:
-            self.df = ParseNewData(input_df, parseDataframe)
-     
-    def ParseNewData(self, df, parsing_func=parseDataframe, store_incache=None, cache_name='cached_dataframe.pkl', debug=False):
+            self.df = ParseNewData(input_df, self._data_processor)
+
+    def putStoreData(self, df=None, data_store_method=None, data_dir='cached_dataframe.pkl'):
+        if df is None:
+            df = self.df
+        else:
+            try:
+                if not (df.empty):
+                    self.df = df
+            except:
+                print ("*Alert* the dataframe is empty")
+                pass
+
+        if data_store_method is None:
+            data_store_method = self.put_store_data
+
+        if data_store_method  is not None and df is not None and data_dir is not None:
+            data_store_method(self.df, data_dir)
+            return True
+        return False
+
+    def getStoreData(self, data_dir='cached_dataframe.pkl'):
+        if self.get_store_data is not None:
+            return self.get_store_data(dir)
+        return None
+
+    def ParseNewData(self, df, parsing_func=None, data_store_method=None, data_dir='cached_dataframe.pkl', debug=False):
         # Call the parsing function
+        # Set the default parsing function if None is provided
+        if parsing_func is None:
+            parsing_func = self.data_processor
+        print("Before parsing:")
+        print(df,"\n\n")
         df = parsing_func(df,self.columns)
+        print("parsing_func(df,self.columns) result:", df, "\n\n" )
 
         if debug:
             print(df.to_string())
 
-        # Store the DataFrame to pickle file if store_incache is provided
-        if store_incache is not None and cache_name is not None:
-            store_incache(cache_name)
+        # Store the DataFrame to pickle file if data_store_method is provided
+        if data_store_method is not None and data_dir is not None:
+            #data_store_method(data_dir)
+            data_store_method(df, data_dir)
         
         if debug:
             print("\n\n after parsing_func ParseNewData call:\n", df.to_string())
@@ -561,31 +529,41 @@ def getLocalStoreDataFrame():
     debug=False
     ## add  the files processing to larger fucntion; the ideia is  having multiple ways to get data, inclusive from a API    
     df_cache=collectCacheData(debug=False,collect_cache_func=pandas.read_pickle, bool_assert_cache_func=(lambda dataframe: dataframe.empty))
+    print("At getLocalStoreDataFrame(), getting cache df:", df_cache, "\n\n")
+    
     file_list =getLocalFiles()
-
     dir_file_list = checkUniqueFilesInCache(df_cache, file_list)
 
     df, count = processDirectoryFiles(dir_file_list, read_file_func=readPDF)
-
-    if isinstance(df_cache, type(None)) == False:
-        df = pandas.concat([df,df_cache])
-    elif not(count):
-        print("line-369 No Data Available.")
-        sys.exit(0)
-
-    return df, count
+    #print("At getLocalStoreDataFrame(), after processDirectoryFiles the df is:",dir_file_list, df, "\n\n", isinstance(df_cache, type(None)), df_cache.head(5))
+    
+    #print("At getLocalStoreDataFrame, after concat df is:", count,"\n", df.head(5).to_string(), "\n\n")
+    return df, df_cache, count
 
 if __name__ == "__main__":
     read_cache = None
     df=None
     debug=False
-    processor =FinancialDataProcessor()
-    df, count = getLocalStoreDataFrame()
+    processor =FinancialDataProcessor({"Balance":"Saldo","Value":"Valor.1", "Date":"Mov", "Info":"Descritivo do Movimento", "Group":"Valor", "Filename":"Filename"})
+    df, df_cache, count = getLocalStoreDataFrame()
 
-    ## processor should only have store method and not passing store_incache; need to be adaptable to store both in cloud and cache
-    df = processor.ParseNewData(df,store_incache= df.to_pickle)
-   
-   
+    ## processor should only have store method and not passing datastore_method; need to be adaptable to store both in cloud and cache
+    if count:
+        df = processor.ParseNewData(df)
+        if isinstance(df_cache, type(None)) == False:
+            print("lets parse if exists")
+            df = processor.ParseNewData(df)
+            print("lets concat")
+            df = pandas.concat([df,df_cache])
+        f= processor.putStoreData(df,data_store_method= StoreInCache, data_dir='cached_dataframe.pkl')
+        print("Data stored? ", f, "\n\n")
+    elif isinstance(df_cache, type(None)) == False:
+            df = df_cache
+    else:
+        print("line-369 No Data Available.")
+        sys.exit(0)
+    
+
     print(processor.balanceAmount(df))
     print("processor.expensesAnalytics(df)")
     print(processor.expensesAnalytics(df))
@@ -613,7 +591,6 @@ if __name__ == "__main__":
 
 
     print("\n\n Prepare data for plot \n\n")
-  
     
     # plot
     fig=plt.figure()
@@ -628,13 +605,13 @@ if __name__ == "__main__":
     #ax.bar(data[0],data[1])
   
     
-    #processor.plotOverviewDF(df,fig,ax)
+    processor.plotOverviewDF(df,fig,ax)
     #plotOverview_EI(processor.getExpensesOverview(df),processor.getIncomeOverwiew(df),processor.getMarginOverview(df),fig,ax)
     #plotSimple_EI([x,y],[x2,y2],fig, ax)
     #plotSimple_EI([sdf['Mov'],-sdf['Valor.1']],[sdf2['Mov'],sdf2['Valor.1']],fig, ax)
     #line0=ax.plot(sdf3['Mov'],sdf3['Valor.1'],color='k', alpha=0.1)
-    plotSimple_EI([processor.getExpensesMonthly(df)[0],-processor.getExpensesMonthly(df)[1]],processor.getIncomeMonthly(df),fig, ax)
-    line0=ax.stackplot(processor.getMarginMonthly(df)[0],processor.getMarginMonthly(df)[1],color='k', alpha=0.1)
+    #plotSimple_EI([processor.getExpensesMonthly(df)[0],-processor.getExpensesMonthly(df)[1]],processor.getIncomeMonthly(df),fig, ax)
+    #line0=ax.stackplot(processor.getMarginMonthly(df)[0],processor.getMarginMonthly(df)[1],color='k', alpha=0.1)
 
     plt.show()
 
