@@ -1,3 +1,10 @@
+# configstructures.py
+# Author: bmalbusca
+# Year: 2024
+# License: GNU General Public License v3.0 (GPL-3.0)
+# License URL: https://github.com/bmalbusca/montlySavings/blob/master/LICENSE
+# Description: This library file stores all static variable definitions and parameters
+
 categories_hierarchy = [
     {'label': 'Housing', 'value': 0, 'sub': [
         {'label': 'Mortgage/Rent', 'value': 0},

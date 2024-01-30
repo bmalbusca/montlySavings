@@ -1,3 +1,9 @@
+# monthlySavings.py
+# Author: bmalbusca
+# Year: 2023
+# License: GNU General Public License v3.0 (GPL-3.0)
+# License URL: https://github.com/bmalbusca/montlySavings/blob/master/LICENSE
+
 import sys
 import datetime
 import pandas
@@ -10,23 +16,38 @@ from configstructures import categories_hierarchy, pdf_columns, df_columns_trans
 from strings import str2num, convert_inner_lists_of_list_to_strings, levenshtein_distance
 
 def processDirectoryFiles(file_list, read_file_func):
+    """
+    Process files in the specified directories.
+
+    Args:
+        file_list (dict): A dictionary containing directory names as keys and lists of file names as values.
+        read_file_func (function): A function to read and process a file.
+
+    Returns:
+        pandas.DataFrame: Concatenated DataFrame of processed files.
+        int: Total count of processed files.
+    """
     df = pandas.DataFrame()
     count = 0
     for fdir in list(file_list.keys()):
         for filename in file_list[fdir]:
-            complete_dir = fdir+'/'+filename
+            complete_dir = fdir + '/' + filename
             s = read_file_func(complete_dir)[0]
             df = pandas.concat([df, s])
             count += 1
     return df, count
 
-# add new column category with Nan
-# check if there is labels already established to the same columns name
-# get the year by df['Valor']
-# columns should be used by config file
-
 def parseDataframe(df, columns={"Balance":"Saldo","Value":"Valor.1", "Date":"Mov", "Info":"Descritivo do Movimento", "Group":"Valor", "Filename":"Filename"}):
-    print("At parseDataframe", df )
+    """
+    Parse the DataFrame to prepare it for further analysis.
+
+    Args:
+        df (pandas.DataFrame): Input DataFrame.
+        columns (dict): Dictionary mapping column names.
+
+    Returns:
+        pandas.DataFrame: Processed DataFrame.
+    """
     try:
         # Drop rows with NaN in 'Saldo' and 'Valor.1' columns
         df = df.dropna(subset=[columns["Balance"], columns["Value"]]).reset_index(drop=True)
@@ -34,34 +55,74 @@ def parseDataframe(df, columns={"Balance":"Saldo","Value":"Valor.1", "Date":"Mov
         df[[columns["Balance"], columns["Value"]]] = df[[columns["Balance"], columns["Value"]]].applymap(str2num)
         # Combine 'Mov' with the predefined year and convert to datetime
         df[columns["Date"]] = pandas.to_datetime(df[columns["Date"]].astype(str) + '-'+ df[columns["Group"]].astype(str) , errors='coerce', format='%d-%m-%Y')
-        #df[columns["Date"]] = pandas.to_datetime(df[columns["Date"]].astype(str) + '-2023', errors='coerce',format='%Y-%m-%d')
         # Drop duplicates, sort by 'Mov', and reset index
         df = df.drop_duplicates().sort_values(by=columns["Date"]).reset_index(drop=True)
     except:
-        df=None
-        print( " Failed to parse at parseDataframe() \n\n" )
+        df = None
+        print("Alert - Failed to parse at parseDataframe() \n\n")
     
-    print("After parseDataframe", df )
-
     return df
-def existsNaNDataframe(df, column='Saldo'):
-    print("Nan Values:",df[column].isnull().values.any()) #There is nan
-    print("Nan Values Indexes:",list(df.loc[pandas.isna(df[column]), :].index)) #return the indexes
-    print(df.loc[pandas.isna(df[column]), :]) # return the rows with nan
 
-def checkDataframeValid(df,columns=df_columns_translator):
+def existsNaNDataframe(df, column='Saldo'):
+    """
+    Check if NaN values exist in the specified column of the DataFrame.
+
+    Args:
+        df (pandas.DataFrame): Input DataFrame.
+        column (str): Column name.
+
+    Returns:
+        None
+    """
+    print("Nan Values:", df[column].isnull().values.any())  # There is nan
+    print("Nan Values Indexes:", list(df.loc[pandas.isna(df[column]), :].index))  # Return the indexes
+    print(df.loc[pandas.isna(df[column]), :])  # Return the rows with nan
+
+def checkDataframeValid(df, columns=df_columns_translator):
+    """
+    Check the validity of a DataFrame based on specific criteria.
+
+    Parameters:
+    - df: pandas DataFrame
+        The DataFrame to be validated.
+    - columns: dict, optional
+        A dictionary representing column translations. Default is df_columns_translator.
+
+    Returns:
+    bool
+        True if the DataFrame is valid, False otherwise.
+    """
     dateformat_valid_bool = pandas.to_datetime(df[df_columns_translator['Date']], format='%d-%m-%Y', errors='coerce').notnull().all()
     balance_valid_bool = df[df_columns_translator['Balance']].notnull().values.any()
     value_valid_bool = df[df_columns_translator['Value']].notnull().values.any()
     columns_names = set(df_columns_translator.values()).issubset(set(df.columns))
     return dateformat_valid_bool & balance_valid_bool & value_valid_bool & columns_names
 
-# filter_set_column is o dicionario com as colunas que  a table deve ter
-# date_ref usado para adicionar uma referencia temporal
-# esta funcao adicona uam refernecia do nome do ficheiro no dataframe
-# se nao encontrar tablea retorna tabelas com apenas nomes das columnas para tentar identificar coluna manualmente e atribuir cada 
-def readPDF(file_dir="~/Downloads/extracto.pdf", debug=False, filter_set_column=pdf_columns, date_ref={'year':'2023', 'column': 'Valor'}, store_incache=None, cache_name='cached_dataframe.pkl'):
 
+def readPDF(file_dir="~/Downloads/extracto.pdf", debug=False, filter_set_column=pdf_columns, date_ref={'year':'2023', 'column': 'Valor'}, store_incache=None, cache_name='cached_dataframe.pkl'):
+    """
+    Read tables from a PDF file, filter based on specified columns, and add a reference to the DataFrame.
+
+    Parameters:
+    - file_dir: str, optional
+        The file path of the PDF. Default is "~/Downloads/extracto.pdf".
+    - debug: bool, optional
+        If True, print debug information. Default is False.
+    - filter_set_column: set, optional
+        The set of columns used for filtering tables. Default is pdf_columns.
+    - date_ref: dict, optional
+        A dictionary containing year and column information for adding a reference to the DataFrame. Default is {'year':'2023', 'column': 'Valor'}.
+    - store_incache: function, optional
+        A function for storing the DataFrame in cache. Default is None. Example: df.to_pickle('cached_dataframe.pkl')
+    - cache_name: str, optional
+        The name of the cache file. Default is 'cached_dataframe.pkl'.
+
+    Returns:
+    - df: pandas DataFrame
+        The resulting DataFrame.
+    - non_idenfied_tables: list
+        A list of tables that were not identified based on filtering.
+    """
     tables_list = tabula.read_pdf(file_dir, pages="all")
 
     if debug:
@@ -70,12 +131,14 @@ def readPDF(file_dir="~/Downloads/extracto.pdf", debug=False, filter_set_column=
     filtered_tables=[]
     filtered_table_length=0
     non_idenfied_tables=[]
-    
+
+    # Filter tables based on specified columns
     for table in tables_list:
         if filter_set_column.issubset(table.columns):
                 filtered_tables.append(table)
                 filtered_table_length+=1
 
+    # If no tables are identified, store column names for manual identification
     if filtered_table_length==0:
         for table in tables_list:
             filtered_tables.append(table.columns)
@@ -85,11 +148,12 @@ def readPDF(file_dir="~/Downloads/extracto.pdf", debug=False, filter_set_column=
     if debug:
         print(len(filtered_tables[0]), len(filtered_tables[1]),len(filtered_tables[0])+ len(filtered_tables[1]) )
     
+    # Concatenate identified tables
     for i in range(filtered_table_length-1):
         if debug:
             print("table[",i,"]")
         if list(filtered_tables[0].columns) == list(filtered_tables[i+1].columns):
-            df=pandas.concat([df, filtered_tables[i+1]], ignore_index = True)
+            df=pandas.concat([df, filtered_tables[i+1]], ignore_index=True)
     
     df['Filename']=file_dir
     df['Category']=None
@@ -105,14 +169,32 @@ def readPDF(file_dir="~/Downloads/extracto.pdf", debug=False, filter_set_column=
             pass
         
     # Store your DataFrame
-    if store_incache is not None:
-        #df.to_pickle('cached_dataframe.pkl') # will be stored in current directory store_incache->df.to_pickle
-        store_incache(cache_name)
+    if store_incache is not None:    
+        store_incache(cache_name) # will be stored in the current directory store_incache->df.to_pickle
     
     return df, non_idenfied_tables
 
-## Usage example: filterDate(df,'2023-07-11','2023-07-13' ))
-def filterDate(df, start, end_date=False,column='Mov', debug=False):
+
+def filterDate(df, start, end_date=False, column='Mov', debug=False):
+    """
+    Filter a DataFrame based on a date range.
+
+    Parameters:
+    - df: pandas DataFrame
+        The DataFrame to be filtered.
+    - start: str
+        The start date for filtering.
+    - end_date: str, optional
+        The end date for filtering. Default is False.
+    - column: str, optional
+        The column containing date information. Default is 'Mov'.
+    - debug: bool, optional
+        If True, print debug information. Default is False.
+
+    Returns:
+    pandas DataFrame
+        The filtered DataFrame.
+    """
     if end_date:
         mask = (df[column] >= start) & (df[column] <= end_date)
     else:
@@ -124,12 +206,22 @@ def filterDate(df, start, end_date=False,column='Mov', debug=False):
     
     return df[mask]
 
+
 def StoreInCache(df, cache_name):
-    print("Entered on StoreInCache with df:",df.head(5).to_string(), "\n\n" )
+    """
+    Store a DataFrame in cache.
+
+    Parameters:
+    - df: pandas DataFrame
+        The DataFrame to be stored.
+    - cache_name: str
+        The name of the cache file.
+    """
     if isinstance(df, pandas.DataFrame):
         df.to_pickle(cache_name)
 
-#example for PDF files the df_columns = {"Balance":"Saldo","Value":"Valor.1", "Date":"Mov", "Info":"Descritivo do Movimento", "Group":"Valor", "Filename":"Filename"}
+
+#Example for Santander PDF files the df_columns = {"Balance":"Saldo","Value":"Valor.1", "Date":"Mov", "Info":"Descritivo do Movimento", "Group":"Valor", "Filename":"Filename"}
 class FinancialDataProcessor:
     def __init__(self, df_columns, input_df=None, _put_store_data=None, _get_store_data=None, _data_processor=parseDataframe):
         self.df = None
@@ -172,17 +264,12 @@ class FinancialDataProcessor:
         # Set the default parsing function if None is provided
         if parsing_func is None:
             parsing_func = self.data_processor
-        print("Before parsing:")
-        print(df,"\n\n")
         df = parsing_func(df,self.columns)
-        print("parsing_func(df,self.columns) result:", df, "\n\n" )
-
         if debug:
             print(df.to_string())
 
         # Store the DataFrame to pickle file if data_store_method is provided
         if data_store_method is not None and data_dir is not None:
-            #data_store_method(data_dir)
             data_store_method(df, data_dir)
         
         if debug:
@@ -245,7 +332,7 @@ class FinancialDataProcessor:
         recurring_exp = df[(df[column['Value']] < 0)].groupby(column['Info']).size().to_frame(name='size').reset_index().sort_values(by='size', ascending=False)
         rec_merge = pd.merge(receivers, recurring_exp, on=column['Info'], how='inner')
         result = rec_merge.sort_values(by='size', ascending=False).rename(columns={column['Value']: 'Sum', 'size': 'Occurrences'}).head(threshold)
-        #print(result)
+
         return result
 
     def expensesAnalytics(self,df, column=None):
@@ -290,7 +377,6 @@ class FinancialDataProcessor:
         expense_values = df[df[column['Value']]<0].groupby([column['Date']]).agg("sum")
         idx_expense_values= expense_values.index
         acc_expense_values=  expense_values[column['Value']].cumsum()
-        #print(idx_expense_values, expense_values)
         return [idx_expense_values,-expense_values[column['Value']], -acc_expense_values]
 
     def getMarginOverview(self,df=None,column=None):
@@ -322,20 +408,14 @@ class FinancialDataProcessor:
             df=self.df
         # Perform the groupby operation and store the result in a variable
         grouped_expense_by_month = df[df[column['Value']] < 0].groupby([df[column['Date']].dt.year, df[column['Date']].dt.month]).sum()
-        # print(grouped_expense_by_month,grouped_expense_by_month[column['Value']],grouped_expense_by_month.index[0][1])
 
-        ## By month
+        ##By month
         x_grouplist=[]
         for i in grouped_expense_by_month.index:
                 x_grouplist.append(datetime.datetime.strptime(str(i[0])+'-'+str(i[1]), '%Y-%m'))
-        
-        #print(x_grouplist)
+
         sdf=grouped_expense_by_month.reset_index(drop=True) #expenses_by_month
         sdf[column['Date']]=x_grouplist
-        
-        #print(sdf.head())
-        #print(sdf[column['Date']],sdf[column['Value']])
-
         return [sdf[column['Date']],sdf[column['Value']]]
 
     def getIncomeMonthly(self, df=None,column=None):
@@ -344,17 +424,13 @@ class FinancialDataProcessor:
         if df is None:
             df=self.df
         grouped_income_by_month = df[df[column['Value']] > 0].groupby([df[column['Date']].dt.year, df[column['Date']].dt.month]).sum()
-        # print(grouped_expense_by_month,grouped_expense_by_month[column['Value']],grouped_expense_by_month.index[0][1])
-
+        
         x_grouplist2=[]
         for i in grouped_income_by_month.index:
                 x_grouplist2.append(datetime.datetime.strptime(str(i[0])+'-'+str(i[1]), '%Y-%m'))
-        #print(x_grouplist)
+
         sdf2=grouped_income_by_month.reset_index(drop=True) #expenses_by_month
         sdf2[column['Date']]=x_grouplist2
-        #print(sdf.head())
-        #print(sdf2[column['Date']],sdf2[column['Value']])
-        
         return [sdf2[column['Date']],sdf2[column['Value']]]
 
     def getMarginMonthly(self, df=None, column=None):
@@ -380,7 +456,6 @@ class FinancialDataProcessor:
 
         # Access a specific group by using the .get_group() method on the GroupBy object
         #group=grouped_expense_by_month.loc[2023]
-
         # Display the result
         #print(grouped_expense_by_month.loc[grouped_expense_by_month.index[0]], grouped_expense_by_month.index, group.index,group.loc[group.index[0]]
 
@@ -448,7 +523,9 @@ class FinancialDataProcessor:
         if label:
             ax.bar_label(bar1, rotation=30)
             ax.bar_label(bar2,rotation=30)
-
+    
+    # Example of usage: df=processor.assingCategory(attr, df,debug=True)
+    ## Where attr must be attr = {'COMPRA *6081 A9 LOURES':'Toll Tax','COMPRA *6081 PRIO ENERGY ALFORNELOS':'Fuel', "COMPRA *6081 PD RAMADA ODIVELAS":'Supermarket','COMPRA *0080 CP AMADORA 2700-349-AMAD':'Train'}
     def assingCategory(self,  categories:dict, df=None,debug=False):
         if df is None:
             df=self.df
@@ -486,12 +563,22 @@ class FinancialDataProcessor:
             df=self.df
         unique_labels = df[self.columns['Info']].unique()
         transfer_types_data = create_transfer_types_data(unique_labels)
-        #print("TESTESS",transfer_types_data )
         return convert_inner_lists_of_list_to_strings(transfer_types_data)
 
 
 
 def create_transfer_types_data (unique_labels:dict):
+    """
+    Create a dictionary to store information about transfer types.
+
+    Parameters:
+    - unique_labels: dict
+        Dictionary containing unique labels.
+
+    Returns:
+    dict
+        Dictionary with transfer types and their corresponding details.
+    """
     # Dictionary to store information about transfer types
     transfer_types_data = {}
 
@@ -512,6 +599,19 @@ def create_transfer_types_data (unique_labels:dict):
     return transfer_types_data
 
 def get_similiar_transfer_types(transfer_types_data: dict, levenshtein_distance):
+    """
+    Find similar transfer types using Levenshtein distance.
+
+    Parameters:
+    - transfer_types_data: dict
+        Dictionary with transfer types and their details.
+    - levenshtein_distance: function
+        Levenshtein distance function.
+
+    Returns:
+    dict
+        Dictionary containing similar transfer types.
+    """
     # Extract keys from the dictionary
     transfer_type_keys = list(transfer_types_data.keys())  
     number_of_keys = len(transfer_type_keys)
@@ -526,7 +626,6 @@ def get_similiar_transfer_types(transfer_types_data: dict, levenshtein_distance)
             # Check if Levenshtein distance is less than 3
             if distance < 3:
                 transfer_labels_i, transfer_labels_j = transfer_types_data[key_i], transfer_types_data[key_j]
-
                 # Iterate through the transfer labels of the current keys
                 for transfer_label_i in transfer_labels_i:
                     for transfer_label_j in transfer_labels_j:
@@ -545,6 +644,19 @@ def get_similiar_transfer_types(transfer_types_data: dict, levenshtein_distance)
 
 
 def checkUniqueFilesInCache(df_cache, file_list):
+    """
+    Check for unique files in the cache.
+
+    Parameters:
+    - df_cache: pandas DataFrame
+        Cached DataFrame.
+    - file_list: list
+        List of file names.
+
+    Returns:
+    dict
+        Dictionary containing unique files.
+    """
     if isinstance(df_cache, type(None)) == False: #does not existe data
 
         cached_file_list= df_cache['Filename'].unique()
@@ -553,8 +665,7 @@ def checkUniqueFilesInCache(df_cache, file_list):
         dir_file_list={}
         for keys in file_list:
             for cached_filename in cached_file_list:
-                if cached_filename.split("/")[-1] not in file_list[keys]:
-                    print(cached_filename.split("/")[-1]," is a new file to explore\n")
+                if cached_filename.split("/")[-1] not in file_list[keys]: #get filename without the path
                     filtered_file.append(file_list[keys])
 
             dir_file_list[keys]=filtered_file
@@ -564,20 +675,22 @@ def checkUniqueFilesInCache(df_cache, file_list):
     return dir_file_list
 
 def getLocalStoreDataFrame():
+    """
+    Get the local stored DataFrame in cache.
+
+    Returns:
+    tuple
+        Tuple containing DataFrame, cached DataFrame, and count.
+    """
     read_cache = None
     df=None
     debug=False
-    ## add  the files processing to larger fucntion; the ideia is  having multiple ways to get data, inclusive from a API    
+  
     df_cache=collectCacheData(debug=False,collect_cache_func=pandas.read_pickle, bool_assert_cache_func=(lambda dataframe: dataframe.empty))
-    print("At getLocalStoreDataFrame(), getting cache df:", df_cache, "\n\n")
-    
     file_list =getLocalFiles()
     dir_file_list = checkUniqueFilesInCache(df_cache, file_list)
-
     df, count = processDirectoryFiles(dir_file_list, read_file_func=readPDF)
-    #print("At getLocalStoreDataFrame(), after processDirectoryFiles the df is:",dir_file_list, df, "\n\n", isinstance(df_cache, type(None)), df_cache.head(5))
-    
-    #print("At getLocalStoreDataFrame, after concat df is:", count,"\n", df.head(5).to_string(), "\n\n")
+
     return df, df_cache, count
 
 
@@ -586,103 +699,82 @@ if __name__ == "__main__":
     df=None
     debug=False
     processor =FinancialDataProcessor(df_columns_translator)
+    
+    # add  the files processing to larger fucntion; the ideia is  having multiple ways to get data, inclusive from a API  
     df, df_cache, count = getLocalStoreDataFrame()
-
-    ## processor should only have store method and not passing datastore_method; need to be adaptable to store both in cloud and cache
+    # processor should only have store method and not passing datastore_method; need to be adaptable to store both in cloud and cache
     if count:
         df = processor.ParseNewData(df)
         if isinstance(df_cache, type(None)) == False:
-            print("lets parse if exists")
-            df = processor.ParseNewData(df)
-            print("lets concat")
+            #df = processor.ParseNewData(df)
             if checkDataframeValid(df_cache):
                 df = pandas.concat([df,df_cache])
 
-        f= processor.putStoreData(df,data_store_method= StoreInCache, data_dir='cached_dataframe.pkl')
-        print("Data stored? ", f, "\n\n")
+        status = processor.putStoreData(df,data_store_method= StoreInCache, data_dir='cached_dataframe.pkl')
     elif isinstance(df_cache, type(None)) == False and checkDataframeValid(df_cache):
             df = df_cache
-            print ("Check if df is valid:!", checkDataframeValid(df))
     else:
         print("line-369 No Data Available.")
         sys.exit(0)
     
+    # ====== Start: Example of usage ======
+    # print(processor.balanceAmount(df))
+    # print("processor.expensesAnalytics(df)")
+    # print(processor.expensesAnalytics(df))
+    # print("processor.earningsAnalytics(df)")
+    # print(processor.earningsAnalytics(df))
+    # print(processor.expensesAbove(df,100))
+    # print(processor.expensesBiggest(df))
 
-    print(processor.balanceAmount(df))
-    print("processor.expensesAnalytics(df)")
-    print(processor.expensesAnalytics(df))
-    print("processor.earningsAnalytics(df)")
-    print(processor.earningsAnalytics(df))
-    print(processor.expensesAbove(df,100))
-    print(processor.expensesBiggest(df))
+    # print("Months Available: processor.getDataMonth(df) \n")
+    # print(processor.getDataMonth(df))
 
-    print("Months Available: processor.getDataMonth(df) \n")
-    print(processor.getDataMonth(df))
+    # print("getTransferNotCategorised() \n",processor.getTransferNotCategorised(df), "\n\n\n")
+    # print("getUniqueTransfers() \n",processor.getUniqueTransfers(df),"\n\n\n")
+    # print("processor.getSimilarTransfers \n",processor.getSimilarTransfers(df),"\n\n\n")
+    # print("processor.getTransfersByType \n",processor.getTransfersByType(df),"\n\n\n")
+    # ====== End: Example of usage ======
 
-    # def existsNaNDataframe(df, column='Saldo'):
-    # print("Nan Values:",df[column].isnull().values.any()) #There is nan
-    # print("Nan Values Indexes:",list(df.loc[pandas.isna(df[column]), :].index)) #return the indexes
-    # print(df.loc[pandas.isna(df[column]), :]) # return the rows with nan
-
-    # Extract unique values from the "Descritivo do Movimento" column in the DataFrame
-    # print(df.head(5).to_string())
-    # unique_labels = df["Descritivo do Movimento"].unique()
-    # unique_labels_filtered = df[["Descritivo do Movimento","Category"]]
-    # unique_labels_filtered = unique_labels_filtered[pandas.isna(unique_labels_filtered["Category"])]["Descritivo do Movimento"].unique()
-    # transfer_types_data = create_transfer_types_data(unique_labels)
-    # guess_dict = get_similiar_transfer_types(transfer_types_data, levenshtein_distance)
-    
     attr = {'COMPRA *6081 A9 LOURES':'Toll Tax','COMPRA *6081 PRIO ENERGY ALFORNELOS':'Fuel', "COMPRA *6081 PD RAMADA ODIVELAS":'Supermarket','COMPRA *0080 CP AMADORA 2700-349-AMAD':'Train'}
+    df=processor.assingCategory(attr, df)
 
-    print("getTransferNotCategorised() \n",processor.getTransferNotCategorised(df), "\n\n\n")
-    print("getUniqueTransfers() \n",processor.getUniqueTransfers(df),"\n\n\n")
-    print("processor.getSimilarTransfers \n",processor.getSimilarTransfers(df),"\n\n\n")
-    print("processor.getTransfersByType \n",processor.getTransfersByType(df),"\n\n\n")
-
-    df=processor.assingCategory(attr, df,debug=True)
-
-
-
-    
-    # Update the original dictionary to have inner arrays converted to single strings
-    # convert_inner_lists_of_list_to_strings(transfer_types_data)
-
-    # Print the result
-    #print("These movements are the same category? \n\n", guess_dict, "\n\n", unique_labels,"\n\n",unique_labels,unique_labels_filtered)
-    # now, create a pandas dataframe where column "Descritivo do Movimento" is unique_labels, column "label" will be the category; Then  or each unique_label that is a key on guess_dict should have the same label that are the key value of that key 
-    #test =unique_labels_filtered[pandas.isna(unique_labels_filtered["Category"])]["Descritivo do Movimento"]
-    #print(df["Descritivo do Movimento"].value_counts())
-    #df_new_category = pandas.DataFrame(attr.items(), columns=["Descritivo do Movimento", 'Category'])
-    #df=df.merge(df_new_category,how='left', on='Descritivo do Movimento')
-
-    #print(df_new_category.head(10).to_string())
-    #df['Category'] = df["Descritivo do Movimento"].map(attr)
-    #print(df.head(10).to_string())
-
-    print("\n\n Prepare data for plot \n\n")
-    
-    ## Add as examples 1, 2,3 ...
-    ## create a function to test this based on input
     # plot
     fig=plt.figure()
-    #plt.figure(1).clear()
-    ax=fig.add_subplot(111)# 121 for 3 plot at same time
-    #ax2=fig.add_subplot(224, label="Spend")
-    #ax2.stem(x,y)
-    #ax1=fig.add_subplot(222, label="montly Spend")
-    #ax1.bar(sdf['Mov'].values,-sdf['Valor.1'])
-    #ax.bar(t.index.astype(int),t['Valor.1'])
-    data= processor.getExpensesWeekly(df)
-    #ax.bar(data[0],data[1])
-  
-    
-    processor.plotOverviewDF(df,fig,ax)
-    #plotOverview_EI(processor.getExpensesOverview(df),processor.getIncomeOverwiew(df),processor.getMarginOverview(df),fig,ax)
-    #plotSimple_EI([x,y],[x2,y2],fig, ax)
-    #plotSimple_EI([sdf['Mov'],-sdf['Valor.1']],[sdf2['Mov'],sdf2['Valor.1']],fig, ax)
-    #line0=ax.plot(sdf3['Mov'],sdf3['Valor.1'],color='k', alpha=0.1)
-    #plotSimple_EI([processor.getExpensesMonthly(df)[0],-processor.getExpensesMonthly(df)[1]],processor.getIncomeMonthly(df),fig, ax)
-    #line0=ax.stackplot(processor.getMarginMonthly(df)[0],processor.getMarginMonthly(df)[1],color='k', alpha=0.1)
+    ax=fig.add_subplot()# 121 for 3 plot at same time
 
-    plt.show()
+    string_input = """\nWrite 1,2,3 or 4 to select the example:\n
+    1 - Weekly Espenses View\n
+    2 - Year View 1\n
+    3 - Year View 2\n
+    4 - Montlhy Expenses versus Income View\n
+    Other - Exit()\n
+    > """
+    while True:
+        
+        choice = input(string_input)
+
+        fig.clf()
+        plt.close() 
+        fig=plt.figure()
+        ax=fig.add_subplot()# 121 for 3 plot at same time
+
+        if(choice =='1' ):
+            ## Example 1
+            data=processor.getExpensesWeekly(df)
+            ax.bar(data[0],-data[1])
+        elif(choice =='2'):
+            ## Example 2
+            processor.plotOverviewDF(df,fig,ax)
+        elif(choice =='3'):
+            ## Example 3
+            plotOverview_EI(processor.getExpensesOverview(df),processor.getIncomeOverwiew(df),processor.getMarginOverview(df),fig,ax)
+        elif(choice =='4'):
+            ## Example 4
+            plotSimple_EI([processor.getExpensesMonthly(df)[0],-processor.getExpensesMonthly(df)[1]],processor.getIncomeMonthly(df),fig, ax)
+            line0=ax.stackplot(processor.getMarginMonthly(df)[0],processor.getMarginMonthly(df)[1],color='k', alpha=0.1)
+        else:
+            print("Exit(); Bye.")
+            sys.exit(0)
+
+        plt.show()
 

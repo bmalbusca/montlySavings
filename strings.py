@@ -1,3 +1,10 @@
+# strings.py
+# Author: bmalbusca
+# Year: 2024
+# License: GNU General Public License v3.0 (GPL-3.0)
+# License URL: https://github.com/bmalbusca/montlySavings/blob/master/LICENSE
+# Description: This library file provides utility functions for working with strings (str)
+
 def convert_inner_lists_of_list_to_strings(transfer_types_data):
     """Convert inner arrays to single strings in the original dictionary."""
     for key, value in transfer_types_data.items():
