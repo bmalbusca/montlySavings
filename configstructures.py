@@ -77,3 +77,6 @@ categories_hierarchy = [
         {'label': 'Term Deposits', 'value': 0}
     ]}
     ]
+
+pdf_columns={'Mov', 'Valor', 'Descritivo do Movimento','Valor.1' ,'Saldo'}
+df_columns_translator={"Category":"Category","Balance":"Saldo","Value":"Valor.1", "Date":"Mov", "Info":"Descritivo do Movimento", "Group":"Valor", "Filename":"Filename"}

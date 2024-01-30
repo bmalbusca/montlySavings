@@ -7,21 +7,6 @@
 
 import os
 
-def str2num(x: str) -> float:
-    """
-    Converts a string to a floating-point number.
-
-    Parameters:
-    - x (str): Input string.
-
-    Returns:
-    - float: Converted floating-point number.
-    """
-    try:
-        return float(x.split()[0].replace('.', '').replace(',', '.'))
-    except:
-        # Handle the exception by returning the original string
-        return x
 
 def getLocalFiles(sufix="pdf", debug=False) -> dict:
     """

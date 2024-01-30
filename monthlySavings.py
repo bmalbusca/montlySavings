@@ -4,10 +4,10 @@ import pandas
 import tabula
 import matplotlib.pyplot as plt
 from matplotlib.widgets import SpanSelector
-from sysfiles import str2num, getLocalFiles, collectCacheData
+from sysfiles import getLocalFiles, collectCacheData
 from plotdata import plotOverview_EI, plotSimple_EI
-from categories import categories_hierarchy
-import pdb; 
+from configstructures import categories_hierarchy, pdf_columns, df_columns_translator
+from strings import str2num, convert_inner_lists_of_list_to_strings, levenshtein_distance
 
 def processDirectoryFiles(file_list, read_file_func):
     df = pandas.DataFrame()
@@ -15,11 +15,15 @@ def processDirectoryFiles(file_list, read_file_func):
     for fdir in list(file_list.keys()):
         for filename in file_list[fdir]:
             complete_dir = fdir+'/'+filename
-            s = read_file_func(complete_dir)
+            s = read_file_func(complete_dir)[0]
             df = pandas.concat([df, s])
             count += 1
     return df, count
 
+# add new column category with Nan
+# check if there is labels already established to the same columns name
+# get the year by df['Valor']
+# columns should be used by config file
 
 def parseDataframe(df, columns={"Balance":"Saldo","Value":"Valor.1", "Date":"Mov", "Info":"Descritivo do Movimento", "Group":"Valor", "Filename":"Filename"}):
     print("At parseDataframe", df )
@@ -29,7 +33,7 @@ def parseDataframe(df, columns={"Balance":"Saldo","Value":"Valor.1", "Date":"Mov
         # Apply str2num function to 'Saldo' and 'Valor.1' columns
         df[[columns["Balance"], columns["Value"]]] = df[[columns["Balance"], columns["Value"]]].applymap(str2num)
         # Combine 'Mov' with the predefined year and convert to datetime
-        df[columns["Date"]] = pandas.to_datetime(df[columns["Date"]].astype(str) + '-2023', errors='coerce', format='%d-%m-%Y')
+        df[columns["Date"]] = pandas.to_datetime(df[columns["Date"]].astype(str) + '-'+ df[columns["Group"]].astype(str) , errors='coerce', format='%d-%m-%Y')
         #df[columns["Date"]] = pandas.to_datetime(df[columns["Date"]].astype(str) + '-2023', errors='coerce',format='%Y-%m-%d')
         # Drop duplicates, sort by 'Mov', and reset index
         df = df.drop_duplicates().sort_values(by=columns["Date"]).reset_index(drop=True)
@@ -40,50 +44,74 @@ def parseDataframe(df, columns={"Balance":"Saldo","Value":"Valor.1", "Date":"Mov
     print("After parseDataframe", df )
 
     return df
-
-def readPDF(file_dir="~/Downloads/extracto.pdf", debug=False, filter_set_column={'Mov', 'Valor', 'Descritivo do Movimento','Valor.1' ,'Saldo'}, store_incache=None, cache_name='cached_dataframe.pkl'):
-
-    tables = tabula.read_pdf(file_dir, pages="all")
-
-    if debug:
-        print(tables)
-
-    filtered_tables=[]
-    for table in tables:
-        if filter_set_column.issubset(table.columns):
-                filtered_tables.append(table)
-    
-    #change this for future; manual find out is not the correct way, maybe should pass as function or each for each version known
-    #year= tables[-2]['Valor'][0].split('-')[0]
-    year='2023'
-    df=filtered_tables[0].copy()
-
-    if debug:
-        print(len(filtered_tables[0]), len(filtered_tables[1]),len(filtered_tables[0])+ len(filtered_tables[1]) )
-    
-    for i in range(len(filtered_tables)-1):
-        if debug:
-            print("table[",i,"]")
-        if list(filtered_tables[0].columns) == list(filtered_tables[i+1].columns):
-            df=pandas.concat([df, filtered_tables[i+1]], ignore_index = True)
-    df['Filename']=file_dir
-    if debug:
-        print(len(filtered_tables[0]),len(df))
-        print(df)
-    df['Valor']=year
-    # Store your DataFrame
-    if store_incache is not None:
-        #df.to_pickle('cached_dataframe.pkl') # will be stored in current directory store_incache->df.to_pickle
-        store_incache(cache_name)
-    
-    return df
-
 def existsNaNDataframe(df, column='Saldo'):
     print("Nan Values:",df[column].isnull().values.any()) #There is nan
     print("Nan Values Indexes:",list(df.loc[pandas.isna(df[column]), :].index)) #return the indexes
     print(df.loc[pandas.isna(df[column]), :]) # return the rows with nan
 
-## example: filterDate(df,'2023-07-11','2023-07-13' ))
+def checkDataframeValid(df,columns=df_columns_translator):
+    dateformat_valid_bool = pandas.to_datetime(df[df_columns_translator['Date']], format='%d-%m-%Y', errors='coerce').notnull().all()
+    balance_valid_bool = df[df_columns_translator['Balance']].notnull().values.any()
+    value_valid_bool = df[df_columns_translator['Value']].notnull().values.any()
+    columns_names = set(df_columns_translator.values()).issubset(set(df.columns))
+    return dateformat_valid_bool & balance_valid_bool & value_valid_bool & columns_names
+
+# filter_set_column is o dicionario com as colunas que  a table deve ter
+# date_ref usado para adicionar uma referencia temporal
+# esta funcao adicona uam refernecia do nome do ficheiro no dataframe
+# se nao encontrar tablea retorna tabelas com apenas nomes das columnas para tentar identificar coluna manualmente e atribuir cada 
+def readPDF(file_dir="~/Downloads/extracto.pdf", debug=False, filter_set_column=pdf_columns, date_ref={'year':'2023', 'column': 'Valor'}, store_incache=None, cache_name='cached_dataframe.pkl'):
+
+    tables_list = tabula.read_pdf(file_dir, pages="all")
+
+    if debug:
+        print(tables_list)
+
+    filtered_tables=[]
+    filtered_table_length=0
+    non_idenfied_tables=[]
+    
+    for table in tables_list:
+        if filter_set_column.issubset(table.columns):
+                filtered_tables.append(table)
+                filtered_table_length+=1
+
+    if filtered_table_length==0:
+        for table in tables_list:
+            filtered_tables.append(table.columns)
+    
+    df=filtered_tables[0].copy()
+
+    if debug:
+        print(len(filtered_tables[0]), len(filtered_tables[1]),len(filtered_tables[0])+ len(filtered_tables[1]) )
+    
+    for i in range(filtered_table_length-1):
+        if debug:
+            print("table[",i,"]")
+        if list(filtered_tables[0].columns) == list(filtered_tables[i+1].columns):
+            df=pandas.concat([df, filtered_tables[i+1]], ignore_index = True)
+    
+    df['Filename']=file_dir
+    df['Category']=None
+
+    if debug:
+        print(len(filtered_tables[0]),len(df))
+        print(df)
+    if date_ref is not None:
+        try:
+            df[date_ref['column']]=date_ref['year']
+        except Exception as e:
+            print("Alert - Not able to add date reference",e)
+            pass
+        
+    # Store your DataFrame
+    if store_incache is not None:
+        #df.to_pickle('cached_dataframe.pkl') # will be stored in current directory store_incache->df.to_pickle
+        store_incache(cache_name)
+    
+    return df, non_idenfied_tables
+
+## Usage example: filterDate(df,'2023-07-11','2023-07-13' ))
 def filterDate(df, start, end_date=False,column='Mov', debug=False):
     if end_date:
         mask = (df[column] >= start) & (df[column] <= end_date)
@@ -421,30 +449,46 @@ class FinancialDataProcessor:
             ax.bar_label(bar1, rotation=30)
             ax.bar_label(bar2,rotation=30)
 
+    def assingCategory(self,  categories:dict, df=None,debug=False):
+        if df is None:
+            df=self.df
+        if debug:
+            print(df.head(10).to_string())
 
+        df[self.columns['Category']] = df[self.columns['Info']].map(categories)
+        if debug:
+            print(df.head(10).to_string())
 
-def levenshtein_distance(str1, str2):
-    m, n = len(str1), len(str2)
-    
-    # Initialize the matrix
-    matrix = [[0] * (n + 1) for _ in range(m + 1)]
-    
-    # Fill in the first row and first column
-    for i in range(m + 1):
-        matrix[i][0] = i
-    for j in range(n + 1):
-        matrix[0][j] = j
-    
-    # Fill in the rest of the matrix
-    for i in range(1, m + 1):
-        for j in range(1, n + 1):
-            cost = 0 if str1[i - 1] == str2[j - 1] else 1
-            matrix[i][j] = min(matrix[i - 1][j] + 1,      # Deletion
-                              matrix[i][j - 1] + 1,      # Insertion
-                              matrix[i - 1][j - 1] + cost)  # Substitution
-    
-    # The Levenshtein distance is the value in the bottom-right cell
-    return matrix[m][n]
+        return df
+
+    def getTransferNotCategorised(self, df=None):
+        if df is None:
+            df=self.df_cache
+        unique_labels_filtered = df[[self.columns['Info'],self.columns['Category']]]
+        return unique_labels_filtered[pandas.isna(unique_labels_filtered[self.columns['Category']])][self.columns['Info']]
+
+    def getUniqueTransfers(self, df=None):
+        if df is None:
+            df=self.df
+        unique_labels = df[self.columns['Info']].unique()
+        return unique_labels
+
+    def getSimilarTransfers(self, df=None):
+        if df is None:
+            df=self.df
+        unique_labels = df[self.columns['Info']].unique()
+        transfer_types_data = create_transfer_types_data(unique_labels)
+        guess_dict = get_similiar_transfer_types(transfer_types_data, levenshtein_distance)
+        return guess_dict
+
+    def getTransfersByType(self,df=None):
+        if df is None:
+            df=self.df
+        unique_labels = df[self.columns['Info']].unique()
+        transfer_types_data = create_transfer_types_data(unique_labels)
+        #print("TESTESS",transfer_types_data )
+        return convert_inner_lists_of_list_to_strings(transfer_types_data)
+
 
 
 def create_transfer_types_data (unique_labels:dict):
@@ -498,11 +542,7 @@ def get_similiar_transfer_types(transfer_types_data: dict, levenshtein_distance)
                                 print(f"An unexpected error occurred: {e}")
     return guess_dict
 
-def convert_inner_lists_of_list_to_strings(transfer_types_data):
-    """Convert inner arrays to single strings in the original dictionary."""
-    for key, value in transfer_types_data.items():
-        converted_values = [' '.join(inner_array) for inner_array in value]
-        transfer_types_data[key] = converted_values
+
 
 def checkUniqueFilesInCache(df_cache, file_list):
     if isinstance(df_cache, type(None)) == False: #does not existe data
@@ -540,11 +580,12 @@ def getLocalStoreDataFrame():
     #print("At getLocalStoreDataFrame, after concat df is:", count,"\n", df.head(5).to_string(), "\n\n")
     return df, df_cache, count
 
+
 if __name__ == "__main__":
     read_cache = None
     df=None
     debug=False
-    processor =FinancialDataProcessor({"Balance":"Saldo","Value":"Valor.1", "Date":"Mov", "Info":"Descritivo do Movimento", "Group":"Valor", "Filename":"Filename"})
+    processor =FinancialDataProcessor(df_columns_translator)
     df, df_cache, count = getLocalStoreDataFrame()
 
     ## processor should only have store method and not passing datastore_method; need to be adaptable to store both in cloud and cache
@@ -554,11 +595,14 @@ if __name__ == "__main__":
             print("lets parse if exists")
             df = processor.ParseNewData(df)
             print("lets concat")
-            df = pandas.concat([df,df_cache])
+            if checkDataframeValid(df_cache):
+                df = pandas.concat([df,df_cache])
+
         f= processor.putStoreData(df,data_store_method= StoreInCache, data_dir='cached_dataframe.pkl')
         print("Data stored? ", f, "\n\n")
-    elif isinstance(df_cache, type(None)) == False:
+    elif isinstance(df_cache, type(None)) == False and checkDataframeValid(df_cache):
             df = df_cache
+            print ("Check if df is valid:!", checkDataframeValid(df))
     else:
         print("line-369 No Data Available.")
         sys.exit(0)
@@ -575,23 +619,50 @@ if __name__ == "__main__":
     print("Months Available: processor.getDataMonth(df) \n")
     print(processor.getDataMonth(df))
 
+    # def existsNaNDataframe(df, column='Saldo'):
+    # print("Nan Values:",df[column].isnull().values.any()) #There is nan
+    # print("Nan Values Indexes:",list(df.loc[pandas.isna(df[column]), :].index)) #return the indexes
+    # print(df.loc[pandas.isna(df[column]), :]) # return the rows with nan
 
     # Extract unique values from the "Descritivo do Movimento" column in the DataFrame
-    unique_labels = df["Descritivo do Movimento"].unique()
-    transfer_types_data = create_transfer_types_data(unique_labels)
-    guess_dict = get_similiar_transfer_types(transfer_types_data, levenshtein_distance)
+    # print(df.head(5).to_string())
+    # unique_labels = df["Descritivo do Movimento"].unique()
+    # unique_labels_filtered = df[["Descritivo do Movimento","Category"]]
+    # unique_labels_filtered = unique_labels_filtered[pandas.isna(unique_labels_filtered["Category"])]["Descritivo do Movimento"].unique()
+    # transfer_types_data = create_transfer_types_data(unique_labels)
+    # guess_dict = get_similiar_transfer_types(transfer_types_data, levenshtein_distance)
     
+    attr = {'COMPRA *6081 A9 LOURES':'Toll Tax','COMPRA *6081 PRIO ENERGY ALFORNELOS':'Fuel', "COMPRA *6081 PD RAMADA ODIVELAS":'Supermarket','COMPRA *0080 CP AMADORA 2700-349-AMAD':'Train'}
 
+    print("getTransferNotCategorised() \n",processor.getTransferNotCategorised(df), "\n\n\n")
+    print("getUniqueTransfers() \n",processor.getUniqueTransfers(df),"\n\n\n")
+    print("processor.getSimilarTransfers \n",processor.getSimilarTransfers(df),"\n\n\n")
+    print("processor.getTransfersByType \n",processor.getTransfersByType(df),"\n\n\n")
+
+    df=processor.assingCategory(attr, df,debug=True)
+
+
+
+    
     # Update the original dictionary to have inner arrays converted to single strings
     # convert_inner_lists_of_list_to_strings(transfer_types_data)
 
     # Print the result
-    print("These movements are the same category? \n\n", guess_dict, "\n\n", unique_labels,"\n\n")
+    #print("These movements are the same category? \n\n", guess_dict, "\n\n", unique_labels,"\n\n",unique_labels,unique_labels_filtered)
     # now, create a pandas dataframe where column "Descritivo do Movimento" is unique_labels, column "label" will be the category; Then  or each unique_label that is a key on guess_dict should have the same label that are the key value of that key 
+    #test =unique_labels_filtered[pandas.isna(unique_labels_filtered["Category"])]["Descritivo do Movimento"]
+    #print(df["Descritivo do Movimento"].value_counts())
+    #df_new_category = pandas.DataFrame(attr.items(), columns=["Descritivo do Movimento", 'Category'])
+    #df=df.merge(df_new_category,how='left', on='Descritivo do Movimento')
 
+    #print(df_new_category.head(10).to_string())
+    #df['Category'] = df["Descritivo do Movimento"].map(attr)
+    #print(df.head(10).to_string())
 
     print("\n\n Prepare data for plot \n\n")
     
+    ## Add as examples 1, 2,3 ...
+    ## create a function to test this based on input
     # plot
     fig=plt.figure()
     #plt.figure(1).clear()
